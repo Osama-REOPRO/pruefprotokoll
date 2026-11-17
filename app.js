@@ -1,5 +1,6 @@
 import { TEMPLATE_TORE } from './template-tore.js';
 import { db, uid, requestPersistence } from './db.js';
+import { printTore } from './print-tore.js';
 
 const TEMPLATES = { [TEMPLATE_TORE.id]: TEMPLATE_TORE };
 const $app = document.getElementById('app');
@@ -28,6 +29,7 @@ let step = 0;         // 0 = Stammdaten, 1..n = Abschnitte, n+1 = Abschluss
 let undoState = null;
 
 const stepCount = () => tpl.sections.length + 2;
+const stepCountFor = () => TEMPLATE_TORE.sections.length + 1; // Abschluss-Schritt
 const allItems = () => tpl.sections.flatMap(s => s.items);
 
 function stats() {
@@ -107,6 +109,11 @@ async function route() {
   document.getElementById('snack').classList.remove('show');
   const h = location.hash.replace(/^#\/?/, '');
   const parts = h.split('/');
+  if (parts[0] === 'druck' && parts[1]) {
+    if (insp) await saveNow();
+    releaseAwake();
+    return renderPrint(parts[1]);
+  }
   if (parts[0] === 'p' && parts[1]) {
     if (!insp || insp.id !== parts[1]) {
       insp = await db.get('inspections', parts[1]);
@@ -221,7 +228,7 @@ async function newInspection(prefill = {}) {
     id: uid(), templateId: tplNew.id, templateVersion: tplNew.version, status: 'draft',
     header: { kunde: {}, objekt: {}, tor: {}, antrieb: {}, fang: {}, ...structuredClone(prefill.header || {}) },
     customerId: prefill.customerId || null, siteId: prefill.siteId || null, gateId: prefill.gateId || null,
-    prev, prevDatum: prefill.prevDatum || null,
+    prev, prevDatum: prefill.prevDatum || null, prevRemarks: prefill.prevRemarks || '',
     answers, remarks: '', angebot: false, ort: '', datum: todayDE(),
     sig: { ag: { name: '', img: null, absent: false }, an: { name: settings.get('techName', ''), img: null } },
     lastStep: 0,
@@ -306,7 +313,11 @@ function renderHeader() {
 
   $app.innerHTML = `${topBar()}
     <main class="step">
-      ${insp.gateId ? '<p class="hint">Daten vom letzten Mal übernommen. Nur prüfen, was sich geändert hat.</p>' : ''}
+      ${insp.prev ? `<section class="card copy-last">
+          <p><b>Nichts geändert seit ${esc(insp.prevDatum || 'letztem Mal')}?</b><br>Alle Häkchen, Angaben und Mängelbeschreibungen übernehmen und direkt zum Abschluss.</p>
+          <button class="big-btn primary" data-act="copyAll">↺ Alles wie letztes Mal</button>
+        </section>
+        <p class="hint">Oder Daten unten prüfen und dann Abschnitt für Abschnitt bestätigen.</p>` : (insp.gateId ? '<p class="hint">Daten vom letzten Mal übernommen. Nur prüfen, was sich geändert hat.</p>' : '')}
       ${groups}
     </main>
     ${bottomBar('Zur Prüfung ›', 'ready')}`;
@@ -503,6 +514,7 @@ function renderFinish() {
         ${sigPadHTML('an')}
         <label class="toggle"><input type="checkbox" id="rememberSig" ${settings.get('rememberSig', true) ? 'checked' : ''}><span>Name und Unterschrift für nächste Prüfungen merken</span></label>
       </section>
+      <button class="big-btn" data-act="print">🖨 Protokoll ansehen / drucken / PDF</button>
       <p class="disclaimer">${tpl.disclaimer.map(esc).join(' ')}</p>
     </main>
     <nav class="bottom">
@@ -587,13 +599,73 @@ async function fromGate(gateId) {
   const strip = ({ id, createdAt, updatedAt, customerId, ...rest }) => rest;
   await newInspection({ gateId, siteId: g.siteId, customerId: g.customerId,
     header: { kunde: strip(cust), objekt: strip(site), ...structuredClone(g.data) },
-    prev: last ? structuredClone(last.answers) : null, prevDatum: last?.datum || null });
+    prev: last ? structuredClone(last.answers) : null, prevDatum: last?.datum || null, prevRemarks: last?.remarks || '' });
 }
 async function nextGateSameSite() {
   const { kunde, objekt } = insp.header;
   await saveNow();
   await newInspection({ siteId: insp.siteId, customerId: insp.customerId, header: { kunde, objekt } });
 }
+
+// Ganze letzte Prüfung übernehmen (Fotos nicht, die gehören zur alten Prüfung)
+function copyAllFromLast() {
+  const before = { answers: structuredClone(insp.answers), remarks: insp.remarks };
+  let n = 0;
+  for (const it of allItems()) {
+    const p = insp.prev?.[it.id];
+    if (!p?.s && p?.x === undefined) continue;
+    const a = insp.answers[it.id] || {};
+    insp.answers[it.id] = { ...a, ...(p.s ? { s: p.s } : {}), ...(p.x !== undefined ? { x: structuredClone(p.x) } : {}), ...(p.s === 'b' ? { note: a.note || p.note || '' } : {}) };
+    if (p.s) n++;
+  }
+  if (!insp.remarks && insp.prevRemarks) insp.remarks = insp.prevRemarks;
+  buzz([20, 60, 20]);
+  saveNow();
+  go(stepCount() - 1);
+  setTimeout(() => snack(`${n} Punkte wie am ${insp.prevDatum || 'letzten Termin'} übernommen. Bitte noch unterschreiben.`), 150);
+}
+
+// ---------- Druckansicht (wie das Papierformular) ----------
+async function renderPrint(id) {
+  const rec = await db.get('inspections', id);
+  if (!rec) { location.hash = '#/'; return; }
+  const t = TEMPLATES[rec.templateId];
+  const items = t.sections.flatMap(s => s.items);
+  const photos = [];
+  for (const it of items) {
+    const a = rec.answers[it.id];
+    if (a?.s !== 'b') continue;
+    for (const pid of a.photos || []) {
+      const ph = await db.get('photos', pid);
+      if (!ph) continue;
+      if (!photoUrls.has(pid)) photoUrls.set(pid, URL.createObjectURL(ph.blob));
+      photos.push({ url: photoUrls.get(pid), caption: `${it.label}${a.note ? ': ' + a.note : ''}` });
+    }
+  }
+  $app.innerHTML = `
+    <div class="print-bar">
+      <button class="pb-back" data-act="printBack" data-id="${rec.id}">‹ Zurück</button>
+      <button class="pb-print" data-act="doPrint">🖨 Drucken / PDF</button>
+    </div>
+    <p class="print-hint">Vorschau im Format A4. Zum Speichern als PDF im Druckmenü „Als PDF sichern“ bzw. „Teilen“ wählen.</p>
+    <div class="print-stage"><div class="print-scale">${printTore(rec, t, photos)}</div></div>`;
+  fitPrint();
+  window.scrollTo(0, 0);
+}
+function fitPrint() {
+  const sc = document.querySelector('.print-scale');
+  if (!sc) return;
+  sc.style.transform = '';
+  const pageW = sc.querySelector('.ppage').offsetWidth;
+  const k = Math.min(1, (document.documentElement.clientWidth - 16) / pageW);
+  sc.style.transform = `scale(${k})`;
+  sc.style.width = pageW + 'px';
+  sc.style.marginLeft = Math.max(8, (document.documentElement.clientWidth - pageW * k) / 2) + 'px';
+  sc.parentElement.style.height = sc.offsetHeight * k + 30 + 'px';
+}
+window.addEventListener('resize', fitPrint);
+window.addEventListener('beforeprint', () => { const sc = document.querySelector('.print-scale'); if (sc) sc.style.transform = 'none'; });
+window.addEventListener('afterprint', fitPrint);
 
 // ---------- Abschnittswahl (Bottom Sheet) ----------
 function openJump() {
@@ -672,6 +744,10 @@ document.addEventListener('click', async (e) => {
     }
     case 'useSig': insp.sig.an.img = settings.get('techSig', null); saveNow(); return renderFinish();
     case 'finish': return finish();
+    case 'copyAll': return copyAllFromLast();
+    case 'print': await saveNow(); return (location.hash = `#/druck/${insp.id}`);
+    case 'printBack': return (location.hash = `#/p/${b.dataset.id}/${stepCountFor(b.dataset.id)}`);
+    case 'doPrint': return window.print();
     case 'nextGate': return nextGateSameSite();
   }
 });

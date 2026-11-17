@@ -1,7 +1,7 @@
 // Offline: App-Dateien beim ersten Öffnen zwischenspeichern.
 // Bei jeder neuen Version VERSION erhöhen, damit Handys das Update laden.
-const VERSION = 'v3';
-const FILES = ['./', './index.html', './styles.css', './app.js', './db.js', './template-tore.js', './manifest.webmanifest', './icon.svg'];
+const VERSION = 'v4';
+const FILES = ['./', './index.html', './styles.css', './app.js', './db.js', './template-tore.js', './print-tore.js', './print.css', './manifest.webmanifest', './icon.svg'];
 
 self.addEventListener('install', e => {
   e.waitUntil(caches.open(VERSION).then(c => c.addAll(FILES)).then(() => self.skipWaiting()));
