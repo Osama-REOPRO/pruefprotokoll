@@ -145,8 +145,9 @@ canvas.sig { width: 100%; height: 170px; background: #fff; border: 2px dashed va
 .dot.st-done { background: var(--ok); border-color: var(--ok); color: #fff; } .dot.st-na { background: var(--na-bg); }
 .dot.st-defect, .dot.st-defect-open { background: var(--bad); border-color: var(--bad); color: #fff; } .dot.st-partial { background: var(--amber-bg); border-color: var(--amber); }
 .snack { position: fixed; left: 12px; right: 12px; bottom: calc(96px + env(safe-area-inset-bottom)); z-index: 30; display: flex; align-items: center; justify-content: space-between; gap: 10px;
-  background: #111827; color: #fff; padding: 10px 10px 10px 16px; border-radius: 12px; transform: translateY(160%); transition: transform .2s; max-width: 656px; margin: 0 auto; }
-.snack.show { transform: none; }
+  background: #111827; color: #fff; padding: 10px 10px 10px 16px; border-radius: 12px; opacity: 0; visibility: hidden; transform: translateY(12px); transition: opacity .2s, transform .2s, visibility .2s; max-width: 656px; margin: 0 auto; }
+.snack.show { transform: none; opacity: 1; visibility: visible; }
+.snack { pointer-events: none; padding: 14px 16px; }
 .snack button { min-height: 48px; padding: 0 14px; border-radius: 10px; border: 0; background: #fbbf24; color: #111; font-weight: 700; }
 
 /* Zwei Knöpfe je Zeile, wie auf Papier: o.B. / B. */
@@ -170,3 +171,7 @@ canvas.sig { width: 100%; height: 170px; background: #fff; border: 2px dashed va
 .sheet-inner .big-btn { text-align: left; padding: 14px 16px; }
 .tiles { grid-template-columns: repeat(3, 1fr); }
 .center { text-align: center; margin: 10px 0 0; }
+
+.undo-bar { flex: 1; display: flex; align-items: center; justify-content: space-between; gap: 10px; min-height: var(--tap);
+  padding: 4px 4px 4px 14px; border-radius: 12px; background: #111827; color: #fff; font-weight: 600; }
+.undo-bar button { min-height: 48px; padding: 0 14px; border-radius: 10px; border: 0; background: #fbbf24; color: #111; font-weight: 700; white-space: nowrap; }

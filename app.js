@@ -80,14 +80,26 @@ async function keepAwake() {
 function releaseAwake() { try { wakeLock?.release(); } catch {} wakeLock = null; }
 
 // ---------- Snackbar mit Rückgängig ----------
-function snack(text, undoFn) {
+// Hinweise: kurz einblenden, blockieren keine Knöpfe (Tipps gehen durch)
+function snack(text) {
   const el = document.getElementById('snack');
-  el.innerHTML = `<span>${esc(text)}</span>${undoFn ? '<button data-act="undo">Rückgängig</button>' : ''}`;
+  el.textContent = text;
   el.classList.add('show');
-  undoState = undoFn || null;
   clearTimeout(el._t);
-  el._t = setTimeout(() => { el.classList.remove('show'); undoState = null; }, 5000);
+  el._t = setTimeout(() => el.classList.remove('show'), 3500);
 }
+
+// Rückgängig erscheint genau dort, wo der Sammel-Knopf war, und verdeckt nichts
+let undoTimer = null;
+function undoInline(text, undoFn) {
+  const tools = document.querySelector('.sec-tools');
+  if (!tools) return;
+  tools.innerHTML = `<div class="undo-bar"><span>${esc(text)}</span><button data-act="undo">↶ Rückgängig</button></div>`;
+  undoState = undoFn;
+  clearTimeout(undoTimer);
+  undoTimer = setTimeout(() => { undoState = null; if (document.querySelector('.undo-bar')) renderStepKeepScroll(); }, 6000);
+}
+function renderStepKeepScroll() { const y = window.scrollY; renderStep(); window.scrollTo(0, y); }
 
 // ---------- Routing ----------
 async function route() {
@@ -402,9 +414,15 @@ function bulk(sec, mode) {
     n++;
   }
   buzz(20);
-  saveNow(); renderStep();
-  snack(mode === 'last' ? `${n} Punkte wie letztes Mal bestätigt` : `${n} Punkte auf o.B. gesetzt`, () => {
-    insp.answers = before; saveNow(); renderStep();
+  saveNow(); renderStepKeepScroll();
+  // Nur die Punkte zurücknehmen, die der Sammel-Knopf gesetzt hat und die seitdem nicht geändert wurden
+  const filled = sec.items.filter(it => !before[it.id]?.s && insp.answers[it.id]?.s).map(it => [it.id, insp.answers[it.id].s]);
+  undoInline(mode === 'last' ? `${n} wie letztes Mal bestätigt` : `${n} auf o.B. gesetzt`, () => {
+    for (const [id, v] of filled) {
+      if (insp.answers[id]?.s !== v) continue;
+      if (before[id]) insp.answers[id] = before[id]; else delete insp.answers[id];
+    }
+    saveNow(); renderStepKeepScroll();
   });
 }
 
@@ -626,7 +644,7 @@ document.addEventListener('click', async (e) => {
       db.del('photos', b.dataset.pid);
       saveNow(); return rerenderRow(b.dataset.id);
     }
-    case 'undo': { const f = undoState; document.getElementById('snack').classList.remove('show'); return f?.(); }
+    case 'undo': { const f = undoState; undoState = null; clearTimeout(undoTimer); return f?.(); }
     case 'fill': {
       const [g, k] = b.dataset.h.split('.');
       (insp.header[g] ||= {})[k] = b.dataset.v;
