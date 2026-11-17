@@ -1,6 +1,6 @@
 // Offline: App-Dateien beim ersten Öffnen zwischenspeichern.
 // Bei jeder neuen Version VERSION erhöhen, damit Handys das Update laden.
-const VERSION = 'v4';
+const VERSION = 'v5';
 const FILES = ['./', './index.html', './styles.css', './app.js', './db.js', './template-tore.js', './print-tore.js', './print.css', './manifest.webmanifest', './icon.svg'];
 
 self.addEventListener('install', e => {

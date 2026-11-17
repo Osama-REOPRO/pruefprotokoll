@@ -1,11 +1,12 @@
 // Lokale Datenbank (IndexedDB). Alles bleibt auf dem Handy, auch ohne Netz.
 // Getrennte Tabellen, damit später ein Server/Sync dazukommen kann:
-//   customers, sites, gates, inspections, photos (Fotos als Blob, getrennt von der Prüfung)
+//   customers, sites, gates, inspections, photos (Fotos als Blob, getrennt von der Prüfung),
+//   visits (Termin: ein Kunde, ein Objekt, ein Datum, mehrere Tore/Türen)
 // Jeder Datensatz hat id, createdAt, updatedAt (für späteren Abgleich).
 
 const DB_NAME = 'hotz-protokoll';
-const DB_VERSION = 2;
-const STORES = ['customers', 'sites', 'gates', 'inspections', 'photos'];
+const DB_VERSION = 3;
+const STORES = ['customers', 'sites', 'gates', 'inspections', 'photos', 'visits'];
 
 let dbPromise;
 function open() {

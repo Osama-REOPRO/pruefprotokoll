@@ -104,21 +104,40 @@ function undoInline(text, undoFn) {
 function renderStepKeepScroll() { const y = window.scrollY; renderStep(); window.scrollTo(0, y); }
 
 // ---------- Routing ----------
+let lastHash = '';
 async function route() {
+  if (location.hash !== lastHash) { lastHash = location.hash; window.scrollTo(0, 0); }
   closeJump();
   document.getElementById('snack').classList.remove('show');
   const h = location.hash.replace(/^#\/?/, '');
   const parts = h.split('/');
-  if (parts[0] === 'druck' && parts[1]) {
+  if ((parts[0] === 'druck' || parts[0] === 'druck-t') && parts[1]) {
     if (insp) await saveNow();
     releaseAwake();
-    return renderPrint(parts[1]);
+    if (parts[0] === 'druck') return renderPrint([parts[1]], `#/p/${parts[1]}/${stepCountFor()}`);
+    const v = await db.get('visits', parts[1]);
+    const ids = (await visitItems(v)).filter(i => i.status === 'done').map(i => i.id);
+    return renderPrint(ids, `#/t/${v.id}`);
+  }
+  if (parts[0] === 't' && parts[1]) {
+    if (insp) await saveNow();
+    insp = null; tpl = null;
+    releaseAwake();
+    settings.set('last', null);
+    visit = await db.get('visits', parts[1]);
+    if (!visit) { location.hash = '#/'; return; }
+    return parts[2] === 'edit' ? renderVisitEdit() : renderVisit();
   }
   if (parts[0] === 'p' && parts[1]) {
     if (!insp || insp.id !== parts[1]) {
       insp = await db.get('inspections', parts[1]);
       if (!insp) { location.hash = '#/'; return; }
       tpl = TEMPLATES[insp.templateId];
+      // Name des Kunden-Unterzeichners vom letzten Tor dieses Termins vorschlagen
+      if (insp.visitId && !insp.sig.ag.name && insp.status !== 'done') {
+        const v = await db.get('visits', insp.visitId);
+        if (v?.agName) insp.sig.ag.name = v.agName;
+      }
     }
     step = Math.max(0, Math.min(stepCount() - 1, parseInt(parts[2] ?? insp.lastStep ?? 0, 10) || 0));
     settings.set('last', { id: insp.id, step, at: Date.now() });
@@ -126,7 +145,7 @@ async function route() {
     renderStep();
   } else {
     if (insp) await saveNow();
-    insp = null; tpl = null;
+    insp = null; tpl = null; visit = null;
     releaseAwake();
     settings.set('last', null);
     renderHome();
@@ -138,10 +157,13 @@ const go = (s) => { location.hash = `#/p/${insp.id}/${s}`; };
 // ---------- Startseite ----------
 async function renderHome() {
   const all = (await db.all('inspections')).sort((a, b) => b.updatedAt.localeCompare(a.updatedAt));
-  const drafts = all.filter(i => i.status !== 'done');
-  const done = all.filter(i => i.status === 'done');
-  const gates = await db.all('gates');
-  const resume = drafts[0];
+  const visits = await db.all('visits');
+  const vInfo = await Promise.all(visits.map(async v => ({ v, items: await visitItems(v) })));
+  const isDone = ({ items }) => items.length && items.every(i => i.status === 'done');
+  const open = vInfo.filter(x => !isDone(x)).sort((a, b) => dateKey(a.v.datum).localeCompare(dateKey(b.v.datum)));
+  const done = vInfo.filter(isDone).sort((a, b) => dateKey(b.v.datum).localeCompare(dateKey(a.v.datum)));
+  const single = all.filter(i => !i.visitId);
+  const resume = all.find(i => i.status !== 'done' && Object.keys(i.answers || {}).some(k => i.answers[k].s));
 
   $app.innerHTML = `
     <header class="bar">
@@ -153,27 +175,30 @@ async function renderHome() {
       ${resume ? `
         <button class="resume-card" data-act="open" data-id="${resume.id}">
           <span class="eyebrow">Weitermachen</span>
-          <strong>${esc(inspTitle(resume))}</strong>
-          <span class="muted">${esc(inspSub(resume))}</span>
+          <strong>${esc(resume.header?.tor?.standort || inspTitle(resume))}</strong>
+          <span class="muted">${esc(inspTitle(resume))}</span>
           ${progressMini(resume)}
         </button>` : ''}
-      <button class="big-btn primary" data-act="new">＋ Neue Prüfung</button>
-      ${gates.length ? `
-        <section class="card">
-          <h2>Bekanntes Tor erneut prüfen</h2>
-          <input class="field" type="search" id="gateSearch" placeholder="Suchen: Kunde, Objekt, Standort, Fabr.-Nr." autocomplete="off">
-          <div id="gateList">${gateListHTML(gates, '')}</div>
-        </section>` : ''}
-      ${drafts.length > 1 ? `<section class="card"><h2>Angefangen</h2>${drafts.slice(1).map(listRow).join('')}</section>` : ''}
-      ${done.length ? `<section class="card"><h2>Abgeschlossen</h2>${done.slice(0, 30).map(listRow).join('')}</section>` : ''}
-      ${!all.length ? `<p class="empty">Noch keine Prüfungen. Alles wird nur auf diesem Handy gespeichert und funktioniert auch ohne Netz.</p>` : ''}
+      <button class="big-btn primary" data-act="newVisit">＋ Neuer Termin</button>
+      ${open.length ? `<section class="card"><h2>Termine</h2>${open.map(visitRow).join('')}</section>` : ''}
+      ${done.length ? `<section class="card"><h2>Erledigt</h2>${done.slice(0, 30).map(visitRow).join('')}</section>` : ''}
+      ${single.length ? `<section class="card"><h2>Einzelne Prüfungen</h2>${single.slice(0, 30).map(listRow).join('')}</section>` : ''}
+      ${!all.length && !visits.length ? `<p class="empty">Noch keine Termine. Im Büro einen Termin anlegen: Kunde, Objekt und die Tore eintragen. Vor Ort dann nur noch die Checkliste.<br><br>Alles wird nur auf diesem Handy gespeichert und funktioniert auch ohne Netz.</p>` : ''}
     </main>`;
-
-  const search = document.getElementById('gateSearch');
-  search?.addEventListener('input', () => {
-    document.getElementById('gateList').innerHTML = gateListHTML(gates, search.value);
-  });
 }
+// "17.11.2026" -> "2026-11-17" zum Sortieren
+function dateKey(d = '') { const m = String(d).match(/(\d{1,2})\.(\d{1,2})\.(\d{2,4})/); return m ? `${m[3].padStart(4, '20')}-${m[2].padStart(2, '0')}-${m[1].padStart(2, '0')}` : '0000'; }
+function visitRow({ v, items }) {
+  const done = items.filter(i => i.status === 'done').length;
+  const defects = items.filter(i => i.status === 'done' && Object.values(i.answers || {}).some(a => a.s === 'b')).length;
+  const today = dateKey(v.datum) === dateKey(todayDE());
+  return `<button class="list-row" data-act="openVisit" data-id="${v.id}">
+    <span><strong>${esc(visitTitle(v))}</strong><br>
+      <span class="muted small">${today ? '<b class="today">Heute</b> · ' : esc(v.datum || '') + ' · '}${esc(v.kunde?.name || '')}</span><br>
+      <span class="muted small">${items.length ? `${done} von ${items.length} fertig` : 'noch keine Tore'}${defects ? ` · <b class="red">${defects} mit Mängeln</b>` : ''}</span></span>
+    <span class="chev">›</span></button>`;
+}
+const visitTitle = (v) => [v.objekt?.name, v.objekt?.strasse].filter(Boolean).join(', ') || v.kunde?.name || 'Neuer Termin';
 
 function inspTitle(i) {
   const o = i.header?.objekt || {}, k = i.header?.kunde || {};
@@ -218,7 +243,7 @@ function openKindPicker() {
   sheet.classList.add('show');
 }
 
-async function newInspection(prefill = {}) {
+async function newInspection(prefill = {}, { open = true, step: startStep = 0 } = {}) {
   const tplNew = TEMPLATE_TORE;
   // Antworten der letzten Prüfung dieses Tors als Vorschlag (nicht als Antwort) mitnehmen
   const prev = prefill.prev || null;
@@ -228,14 +253,15 @@ async function newInspection(prefill = {}) {
     id: uid(), templateId: tplNew.id, templateVersion: tplNew.version, status: 'draft',
     header: { kunde: {}, objekt: {}, tor: {}, antrieb: {}, fang: {}, ...structuredClone(prefill.header || {}) },
     customerId: prefill.customerId || null, siteId: prefill.siteId || null, gateId: prefill.gateId || null,
+    visitId: prefill.visitId || null, order: prefill.order ?? Date.now(),
     prev, prevDatum: prefill.prevDatum || null, prevRemarks: prefill.prevRemarks || '',
     answers, remarks: '', angebot: false, ort: '', datum: todayDE(),
-    sig: { ag: { name: '', img: null, absent: false }, an: { name: settings.get('techName', ''), img: null } },
-    lastStep: 0,
+    sig: { ag: { name: prefill.agName || '', img: null, absent: false }, an: { name: settings.get('techName', ''), img: null } },
+    lastStep: startStep,
   };
   await db.put('inspections', rec);
-  insp = rec; tpl = tplNew;
-  location.hash = `#/p/${rec.id}/0`;
+  if (open) { insp = rec; tpl = tplNew; location.hash = `#/p/${rec.id}/${startStep}`; }
+  return rec;
 }
 
 // ---------- Kopfzeile + Fortschritt für alle Schritte ----------
@@ -290,7 +316,7 @@ function renderStep() {
 
 // ---------- Schritt 0: Stammdaten ----------
 function renderHeader() {
-  const groups = tpl.header.map(g => {
+  const groups = tpl.header.filter(g => !(insp.visitId && (g.scope === 'customer' || g.scope === 'site'))).map(g => {
     const vals = insp.header[g.id] || {};
     const filled = g.fields.filter(f => vals[f.key]).length;
     return `<section class="card form-group">
@@ -318,6 +344,7 @@ function renderHeader() {
           <button class="big-btn primary" data-act="copyAll">↺ Alles wie letztes Mal</button>
         </section>
         <p class="hint">Oder Daten unten prüfen und dann Abschnitt für Abschnitt bestätigen.</p>` : (insp.gateId ? '<p class="hint">Daten vom letzten Mal übernommen. Nur prüfen, was sich geändert hat.</p>' : '')}
+      ${insp.visitId ? `<p class="hint">Kunde und Objekt kommen vom Termin: <b>${esc(visitTitle({ objekt: insp.header.objekt, kunde: insp.header.kunde }))}</b></p>` : ''}
       ${groups}
     </main>
     ${bottomBar('Zur Prüfung ›', 'ready')}`;
@@ -382,8 +409,20 @@ function rowHTML(it) {
 function renderSection(sec) {
   const untouched = sec.items.filter(it => !insp.answers[it.id]?.s);
   const prevAvail = untouched.some(it => insp.prev?.[it.id]?.s);
+  const t = insp.header.tor || {};
+  const first = step === 1;
+  const nothingYet = !Object.values(insp.answers).some(a => a.s);
+  const summary = first ? `
+    <button class="gate-sum" data-act="goto" data-step="0">
+      <span><b>${esc(t.standort || 'Tor ohne Standort')}</b><br><span class="muted small">${esc([t.typ, t.fabrNr && 'Nr. ' + t.fabrNr, t.hersteller].filter(Boolean).join(' · ') || 'Tordaten eintragen')}</span></span>
+      <span class="small link-ish">Daten ›</span>
+    </button>
+    ${insp.prev && nothingYet ? `<section class="card copy-last">
+      <p><b>Nichts geändert seit ${esc(insp.prevDatum || 'letztem Mal')}?</b></p>
+      <button class="big-btn primary" data-act="copyAll">↺ Alles wie letztes Mal</button></section>` : ''}` : '';
   $app.innerHTML = `${topBar()}
     <main class="step">
+      ${summary}
       <div class="sec-tools">
         ${insp.prev ? `<button class="tool prev" data-act="asLast" ${prevAvail ? '' : 'disabled'}>↺ Wie letztes Mal</button>` : ''}
         <button class="tool ok" data-act="allOk" ${untouched.length ? '' : 'disabled'}>✓ Rest o.B.</button>
@@ -520,7 +559,7 @@ function renderFinish() {
     <nav class="bottom">
       <button class="nav-btn" data-act="prev">‹ Zurück</button>
       ${insp.status === 'done'
-        ? `<button class="nav-btn next ready" data-act="nextGate">＋ Nächstes Tor hier</button>`
+        ? (insp.visitId ? `<button class="nav-btn next ready" data-act="nextInVisit">Nächstes Tor ›</button>` : `<button class="nav-btn next ready" data-act="nextGate">＋ Nächstes Tor hier</button>`)
         : `<button class="nav-btn next ready" data-act="finish">Abschließen ✓</button>`}
     </nav>`;
   initSigPad('ag'); initSigPad('an');
@@ -567,6 +606,10 @@ async function finish() {
   } else settings.set('rememberSig', false);
 
   await upsertMasterData();
+  if (insp.visitId && insp.sig.ag.name) {
+    const v = await db.get('visits', insp.visitId);
+    if (v) { v.agName = insp.sig.ag.name; await db.put('visits', v); }
+  }
   insp.status = 'done';
   insp.finishedAt = new Date().toISOString();
   await saveNow();
@@ -591,16 +634,17 @@ async function upsertMasterData() {
   });
 }
 
-async function fromGate(gateId) {
+const strip = ({ id, createdAt, updatedAt, customerId, ...rest }) => rest;
+async function prefillFromGate(gateId) {
   const g = await db.get('gates', gateId);
   const site = await db.get('sites', g.siteId) || {};
   const cust = await db.get('customers', g.customerId) || {};
   const last = g.lastInspectionId ? await db.get('inspections', g.lastInspectionId) : null;
-  const strip = ({ id, createdAt, updatedAt, customerId, ...rest }) => rest;
-  await newInspection({ gateId, siteId: g.siteId, customerId: g.customerId,
+  return { gateId, siteId: g.siteId, customerId: g.customerId,
     header: { kunde: strip(cust), objekt: strip(site), ...structuredClone(g.data) },
-    prev: last ? structuredClone(last.answers) : null, prevDatum: last?.datum || null, prevRemarks: last?.remarks || '' });
+    prev: last ? structuredClone(last.answers) : null, prevDatum: last?.datum || null, prevRemarks: last?.remarks || '' };
 }
+async function fromGate(gateId) { await newInspection(await prefillFromGate(gateId)); }
 async function nextGateSameSite() {
   const { kunde, objekt } = insp.header;
   await saveNow();
@@ -625,30 +669,184 @@ function copyAllFromLast() {
   setTimeout(() => snack(`${n} Punkte wie am ${insp.prevDatum || 'letzten Termin'} übernommen. Bitte noch unterschreiben.`), 150);
 }
 
+// ---------- Termine (ein Kunde, ein Objekt, ein Datum, mehrere Tore/Türen) ----------
+let visit = null;
+async function visitItems(v) {
+  if (!v) return [];
+  return (await db.all('inspections')).filter(i => i.visitId === v.id).sort((a, b) => (a.order ?? 0) - (b.order ?? 0));
+}
+function itemState(i) {
+  const defects = Object.values(i.answers || {}).filter(a => a.s === 'b').length;
+  if (i.status === 'done') return defects ? ['maengel', `fertig · ${defects} Mängel`] : ['fertig', 'fertig · o.B.'];
+  if (Object.values(i.answers || {}).some(a => a.s)) return ['arbeit', 'in Arbeit'];
+  return ['offen', 'offen'];
+}
+async function newVisit() {
+  const v = { id: uid(), datum: todayDE(), kunde: {}, objekt: {}, customerId: uid(), siteId: uid(), agName: '' };
+  await db.put('visits', v);
+  location.hash = `#/t/${v.id}/edit`;
+}
+function openItem(i) {
+  const last = TEMPLATES[i.templateId].sections.length + 1;
+  const st = i.status === 'done' ? last : (i.lastStep > 0 ? i.lastStep : 1);
+  location.hash = `#/p/${i.id}/${st}`;
+}
+
+// Vor Ort: Liste der Tore, Antippen führt direkt zur Checkliste
+async function renderVisit() {
+  const v = visit, items = await visitItems(v);
+  const done = items.filter(i => i.status === 'done').length;
+  $app.innerHTML = `
+    <header class="bar">
+      <button class="icon-btn" data-act="toHome" aria-label="Übersicht">‹</button>
+      <div class="bar-title"><span class="small muted block">${esc(v.datum || '')} · ${esc(v.kunde?.name || '')}</span>${esc(visitTitle(v))}</div>
+      <button class="icon-btn" data-act="editVisit" aria-label="Termin bearbeiten">✎</button>
+    </header>
+    <main class="home">
+      <section class="card visit-head">
+        <div class="muted small">${esc([v.objekt?.strasse, v.objekt?.plzOrt].filter(Boolean).join(', '))}</div>
+        <div class="vprog"><span class="mini-progress"><span style="width:${items.length ? Math.round(done / items.length * 100) : 0}%"></span></span>
+        <b>${done} von ${items.length} fertig</b></div>
+      </section>
+      ${items.length ? items.map(i => {
+        const [cls, label] = itemState(i);
+        const t = i.header?.tor || {};
+        return `<button class="gate-row st-${cls}" data-act="openItem" data-id="${i.id}">
+          <span class="gate-ico">${{ fertig: '✓', maengel: '✗', arbeit: '…', offen: '' }[cls]}</span>
+          <span class="gate-txt"><b>${esc(t.standort || 'Tor ohne Standort')}</b><br><span class="muted small">${esc([t.typ, t.fabrNr && 'Nr. ' + t.fabrNr].filter(Boolean).join(' · '))}</span></span>
+          <span class="pill ${cls === 'maengel' ? 'red' : cls === 'fertig' ? 'green' : ''}">${label}</span></button>`;
+      }).join('') : '<p class="empty">Noch keine Tore in diesem Termin.</p>'}
+      <button class="big-btn" data-act="addNewGate">＋ Tor hinzufügen</button>
+      ${done ? `<button class="big-btn" data-act="printVisit">🖨 ${done === 1 ? 'Fertiges Protokoll' : `Alle ${done} fertigen Protokolle`} drucken / PDF</button>` : ''}
+    </main>`;
+}
+
+// Im Büro: Kunde, Objekt, Datum und die Tore vorbereiten
+async function renderVisitEdit() {
+  const v = visit, items = await visitItems(v);
+  const gates = (await db.all('gates')).filter(g => g.siteId === v.siteId && !items.some(i => i.gateId === g.id));
+  const sites = await db.all('sites');
+  const groupHTML = (gid) => {
+    const g = TEMPLATE_TORE.header.find(x => x.id === gid);
+    return `<section class="card form-group"><h2>${esc(g.title)}</h2><div class="grid">${g.fields.map(f => `
+      <label class="fld ${f.half ? 'half' : ''}"><span class="lbl">${esc(f.label)}${f.required ? ' <i class="req">*</i>' : ''}</span>
+        <input class="field" data-vh="${gid}.${f.key}" value="${esc(v[gid]?.[f.key])}" enterkeyhint="next" autocomplete="off"></label>`).join('')}</div></section>`;
+  };
+  $app.innerHTML = `
+    <header class="bar">
+      <button class="icon-btn" data-act="openVisit" data-id="${v.id}" aria-label="Zum Termin">‹</button>
+      <div class="bar-title">Termin vorbereiten</div>
+      <span id="saved" class="saved ok">✓ gespeichert</span>
+    </header>
+    <main class="step">
+      ${sites.length && !items.length && !v.sitePicked ? `<section class="card">
+        <h2>Bekanntes Objekt?</h2>
+        <input class="field" type="search" id="siteSearch" placeholder="Suchen: Kunde, Straße, Ort" autocomplete="off">
+        <div id="siteList"></div>
+      </section>` : ''}
+      <section class="card"><label class="fld"><span class="lbl">Datum</span>
+        <input class="field" data-vf="datum" value="${esc(v.datum)}" inputmode="numeric"></label></section>
+      ${groupHTML('kunde')}
+      ${groupHTML('objekt')}
+      <section class="card">
+        <h2>Tore und Türen in diesem Termin <span class="muted small">${items.length}</span></h2>
+        ${items.map(i => {
+          const t = i.header?.tor || {};
+          const started = i.status === 'done' || Object.values(i.answers || {}).some(a => a.s);
+          return `<div class="list-row static"><button class="row-main" data-act="editItem" data-id="${i.id}"><span><b>${esc(t.standort || 'Tor ohne Standort')}</b><br><span class="muted small">${esc([t.typ, t.fabrNr && 'Nr. ' + t.fabrNr].filter(Boolean).join(' · ') || 'Daten eintragen ›')}</span></span></button>
+            ${started ? '' : `<button class="mini-x" data-act="removeItem" data-id="${i.id}" aria-label="Entfernen">×</button>`}</div>`;
+        }).join('')}
+        ${gates.length ? `<h3 class="sub">Schon bekannt an diesem Objekt</h3>
+          ${gates.map(g => `<button class="list-row" data-act="addKnownGate" data-id="${g.id}">
+            <span><b>${esc(g.data?.tor?.standort || g.label)}</b><br><span class="muted small">${esc(g.sub)}</span></span><span class="pill">＋</span></button>`).join('')}
+          ${gates.length > 1 ? `<button class="big-btn" data-act="addAllKnown">Alle ${gates.length} hinzufügen</button>` : ''}` : ''}
+        <div class="two">
+          <button class="big-btn" data-act="addNewGate">＋ Neues Tor</button>
+          <button class="big-btn" disabled title="Formular folgt">＋ Tür <span class="small">(Formular folgt)</span></button>
+        </div>
+      </section>
+    </main>
+    <nav class="bottom"><button class="nav-btn next ready" data-act="openVisit" data-id="${v.id}">Fertig ›</button></nav>`;
+
+  const search = document.getElementById('siteSearch');
+  if (search) {
+    const custs = Object.fromEntries((await db.all('customers')).map(c => [c.id, c]));
+    const draw = () => {
+      const q = search.value.trim().toLowerCase();
+      const hits = sites.filter(st => st.id !== v.siteId && (st.name || st.strasse || st.plzOrt)).filter(st => !q || [st.name, st.strasse, st.plzOrt, custs[st.customerId]?.name].join(' ').toLowerCase().includes(q)).slice(0, 8);
+      document.getElementById('siteList').innerHTML = hits.map(st => `<button class="list-row" data-act="pickSite" data-id="${st.id}">
+        <span><b>${esc([st.name, st.strasse].filter(Boolean).join(', '))}</b><br><span class="muted small">${esc([st.plzOrt, custs[st.customerId]?.name].filter(Boolean).join(' · '))}</span></span><span class="chev">›</span></button>`).join('') || (q ? '<p class="muted">Nichts gefunden.</p>' : '');
+    };
+    search.addEventListener('input', draw); draw();
+  }
+}
+
+let visitTimer = null;
+function saveVisitSoon() { clearTimeout(visitTimer); markUnsaved(); visitTimer = setTimeout(saveVisit, 400); }
+async function saveVisit() {
+  clearTimeout(visitTimer);
+  const v = visit;
+  await db.put('visits', v);
+  // Kunde und Objekt als eigene Datensätze, und in alle offenen Protokolle dieses Termins übernehmen
+  await db.put('customers', { ...(await db.get('customers', v.customerId) || {}), id: v.customerId, ...v.kunde });
+  await db.put('sites', { ...(await db.get('sites', v.siteId) || {}), id: v.siteId, customerId: v.customerId, ...v.objekt });
+  for (const i of await visitItems(v)) {
+    if (i.status === 'done') continue;
+    i.header.kunde = structuredClone(v.kunde); i.header.objekt = structuredClone(v.objekt);
+    i.customerId = v.customerId; i.siteId = v.siteId;
+    await db.put('inspections', i);
+  }
+  showSaved();
+}
+async function pickSite(siteId) {
+  const st = await db.get('sites', siteId);
+  const c = await db.get('customers', st.customerId) || {};
+  Object.assign(visit, { siteId: st.id, customerId: st.customerId, objekt: strip(st), kunde: strip(c), sitePicked: true });
+  await saveVisit();
+  renderVisitEdit();
+}
+async function addGateToVisit(gateId) {
+  const v = visit;
+  const pre = gateId ? await prefillFromGate(gateId) : { header: {} };
+  return newInspection({ ...pre, visitId: v.id, customerId: v.customerId, siteId: v.siteId, agName: v.agName,
+    header: { ...pre.header, kunde: structuredClone(v.kunde), objekt: structuredClone(v.objekt) } }, { open: false, step: 1 });
+}
+async function nextInVisit() {
+  await saveNow();
+  const items = await visitItems({ id: insp.visitId });
+  const idx = items.findIndex(i => i.id === insp.id);
+  const next = [...items.slice(idx + 1), ...items.slice(0, idx)].find(i => i.status !== 'done');
+  if (next) { insp = null; openItem(next); }
+  else { location.hash = `#/t/${items[0]?.visitId}`; setTimeout(() => snack('Alle Tore dieses Termins sind fertig.'), 200); }
+}
+
 // ---------- Druckansicht (wie das Papierformular) ----------
-async function renderPrint(id) {
-  const rec = await db.get('inspections', id);
-  if (!rec) { location.hash = '#/'; return; }
-  const t = TEMPLATES[rec.templateId];
-  const items = t.sections.flatMap(s => s.items);
-  const photos = [];
-  for (const it of items) {
-    const a = rec.answers[it.id];
-    if (a?.s !== 'b') continue;
-    for (const pid of a.photos || []) {
-      const ph = await db.get('photos', pid);
-      if (!ph) continue;
-      if (!photoUrls.has(pid)) photoUrls.set(pid, URL.createObjectURL(ph.blob));
-      photos.push({ url: photoUrls.get(pid), caption: `${it.label}${a.note ? ': ' + a.note : ''}` });
+async function renderPrint(ids, backHash) {
+  let pages = '';
+  for (const id of ids) {
+    const rec = await db.get('inspections', id);
+    if (!rec) continue;
+    const t = TEMPLATES[rec.templateId];
+    const photos = [];
+    for (const it of t.sections.flatMap(s => s.items)) {
+      const a = rec.answers[it.id];
+      if (a?.s !== 'b') continue;
+      for (const pid of a.photos || []) {
+        const ph = await db.get('photos', pid);
+        if (!ph) continue;
+        if (!photoUrls.has(pid)) photoUrls.set(pid, URL.createObjectURL(ph.blob));
+        photos.push({ url: photoUrls.get(pid), caption: `${it.label}${a.note ? ': ' + a.note : ''}` });
+      }
     }
+    pages += printTore(rec, t, photos);
   }
   $app.innerHTML = `
     <div class="print-bar">
-      <button class="pb-back" data-act="printBack" data-id="${rec.id}">‹ Zurück</button>
-      <button class="pb-print" data-act="doPrint">🖨 Drucken / PDF</button>
+      <button class="pb-back" data-act="printBack" data-href="${esc(backHash)}">‹ Zurück</button>
+      <button class="pb-print" data-act="doPrint" ${pages ? '' : 'disabled'}>🖨 Drucken / PDF</button>
     </div>
-    <p class="print-hint">Vorschau im Format A4. Zum Speichern als PDF im Druckmenü „Als PDF sichern“ bzw. „Teilen“ wählen.</p>
-    <div class="print-stage"><div class="print-scale">${printTore(rec, t, photos)}</div></div>`;
+    <p class="print-hint">${ids.length > 1 ? `${ids.length} Protokolle. ` : ''}Vorschau im Format A4. Zum Speichern als PDF im Druckmenü „Als PDF sichern“ bzw. „Teilen“ wählen.</p>
+    <div class="print-stage"><div class="print-scale">${pages || '<p class="empty">Noch kein abgeschlossenes Protokoll.</p>'}</div></div>`;
   fitPrint();
   window.scrollTo(0, 0);
 }
@@ -656,7 +854,9 @@ function fitPrint() {
   const sc = document.querySelector('.print-scale');
   if (!sc) return;
   sc.style.transform = '';
-  const pageW = sc.querySelector('.ppage').offsetWidth;
+  const pg = sc.querySelector('.ppage');
+  if (!pg) return;
+  const pageW = pg.offsetWidth;
   const k = Math.min(1, (document.documentElement.clientWidth - 16) / pageW);
   sc.style.transform = `scale(${k})`;
   sc.style.width = pageW + 'px';
@@ -702,7 +902,7 @@ document.addEventListener('click', async (e) => {
     case 'fromGate': return fromGate(b.dataset.id);
     case 'theme': { const t = settings.get('theme', 'hell'); settings.set('theme', THEMES[(THEMES.indexOf(t) + 1) % THEMES.length]); applyLook(); return renderHome(); }
     case 'size': { settings.set('size', settings.get('size', 'normal') === 'normal' ? 'gross' : 'normal'); return applyLook(); }
-    case 'home': await saveNow(); return (location.hash = '#/');
+    case 'home': await saveNow(); return (location.hash = insp?.visitId ? `#/t/${insp.visitId}` : '#/');
     case 'jump': return openJump();
     case 'goto': closeJump(); return go(+b.dataset.step);
     case 'prev': return go(step - 1);
@@ -745,8 +945,26 @@ document.addEventListener('click', async (e) => {
     case 'useSig': insp.sig.an.img = settings.get('techSig', null); saveNow(); return renderFinish();
     case 'finish': return finish();
     case 'copyAll': return copyAllFromLast();
+    case 'newVisit': return newVisit();
+    case 'openVisit': if (visit) await saveVisit(); return (location.hash = `#/t/${b.dataset.id}`);
+    case 'editVisit': return (location.hash = `#/t/${visit.id}/edit`);
+    case 'toHome': return (location.hash = '#/');
+    case 'openItem': return openItem(await db.get('inspections', b.dataset.id));
+    case 'editItem': await saveVisit(); return (location.hash = `#/p/${b.dataset.id}/0`);
+    case 'removeItem': { await db.del('inspections', b.dataset.id); return renderVisitEdit(); }
+    case 'pickSite': return pickSite(b.dataset.id);
+    case 'addKnownGate': await saveVisit(); await addGateToVisit(b.dataset.id); buzz(); return renderVisitEdit();
+    case 'addAllKnown': {
+      await saveVisit();
+      const items = await visitItems(visit);
+      for (const g of (await db.all('gates')).filter(g => g.siteId === visit.siteId && !items.some(i => i.gateId === g.id))) await addGateToVisit(g.id);
+      buzz(); return renderVisitEdit();
+    }
+    case 'addNewGate': { await saveVisit(); const r = await addGateToVisit(null); return (location.hash = `#/p/${r.id}/0`); }
+    case 'printVisit': return (location.hash = `#/druck-t/${visit.id}`);
+    case 'nextInVisit': return nextInVisit();
     case 'print': await saveNow(); return (location.hash = `#/druck/${insp.id}`);
-    case 'printBack': return (location.hash = `#/p/${b.dataset.id}/${stepCountFor(b.dataset.id)}`);
+    case 'printBack': return (location.hash = b.dataset.href || '#/');
     case 'doPrint': return window.print();
     case 'nextGate': return nextGateSameSite();
   }
@@ -754,6 +972,8 @@ document.addEventListener('click', async (e) => {
 
 document.addEventListener('input', (e) => {
   const t = e.target;
+  if (!insp && visit && t.dataset.vh) { const [g, k] = t.dataset.vh.split('.'); (visit[g] ||= {})[k] = t.value; return saveVisitSoon(); }
+  if (!insp && visit && t.dataset.vf) { visit[t.dataset.vf] = t.value; return saveVisitSoon(); }
   if (!insp) return;
   if (t.dataset.h) { const [g, k] = t.dataset.h.split('.'); (insp.header[g] ||= {})[k] = t.value; return saveSoon(); }
   if (t.dataset.note) { (insp.answers[t.dataset.note] ||= {}).note = t.value; return saveSoon(); }
