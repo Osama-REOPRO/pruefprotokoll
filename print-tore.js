@@ -101,7 +101,7 @@ function line(label, value, unit = '', cls = '') {
 
 export function printDefectLines(insp, tpl) {
   const items = tpl.sections.flatMap(s => s.items);
-  const out = items.filter(it => insp.answers[it.id]?.s === 'b').map(it => `${it.label}: ${insp.answers[it.id].note || 'Mangel'}`);
+  const out = items.filter(it => insp.answers[it.id]?.s === 'b').map(it => insp.answers[it.id].note ? `${it.label}: ${insp.answers[it.id].note}` : it.label);
   if (insp.remarks) out.push(insp.remarks);
   if (!out.length) out.push('Ohne Mängel');
   return out;

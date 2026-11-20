@@ -51,8 +51,9 @@ function stepStatus(i) {
   if (i === stepCount() - 1) return insp.status === 'done' ? 'done' : 'open';
   const sec = tpl.sections[i - 1];
   const st = sec.items.map(it => insp.answers[it.id]?.s);
-  if (st.includes('b')) return st.every(Boolean) ? 'defect' : 'defect-open';
-  return st.every(Boolean) ? 'done' : (st.some(Boolean) ? 'partial' : 'open');
+  // Leere Zeile = trifft nicht zu (wie auf Papier). Abschnitt gilt als erledigt, sobald er angesehen wurde.
+  if (st.includes('b')) return 'defect';
+  return st.some(Boolean) || (insp.maxStep ?? 0) > i ? 'done' : 'open';
 }
 
 // ---------- Speichern ----------
@@ -140,6 +141,7 @@ async function route() {
       }
     }
     step = Math.max(0, Math.min(stepCount() - 1, parseInt(parts[2] ?? insp.lastStep ?? 0, 10) || 0));
+    if (step > (insp.maxStep ?? 0)) insp.maxStep = step;
     settings.set('last', { id: insp.id, step, at: Date.now() });
     keepAwake();
     renderStep();
@@ -296,8 +298,7 @@ function refreshChrome() {
   const nb = document.querySelector('.nav-btn.next');
   if (nb && step > 0 && step < stepCount() - 1) {
     const open = tpl.sections[step - 1].items.filter(it => !insp.answers[it.id]?.s).length;
-    nb.textContent = open ? `Weiter (${open} leer) ›` : 'Weiter ›';
-    nb.classList.toggle('ready', !open);
+    nb.textContent = 'Weiter ›';
   }
   if (step > 0 && step < stepCount() - 1) {
     const untouched = tpl.sections[step - 1].items.filter(it => !insp.answers[it.id]?.s);
@@ -384,7 +385,7 @@ function rowHTML(it) {
     extra = `<input class="field sm" data-x="${it.id}" value="${esc(a.x)}" placeholder="${esc(ex.placeholder || '')}" enterkeyhint="done" autocomplete="off">`;
   }
   // Mangel vom letzten Mal sichtbar machen, damit man prüft, ob er behoben ist
-  const prevDefect = p.s === 'b' ? `<div class="prev-defect"><b>Letztes Mal Mangel${insp.prevDatum ? ` (${esc(insp.prevDatum)})` : ''}:</b> ${esc(p.note || 'ohne Beschreibung')}
+  const prevDefect = p.s === 'b' ? `<div class="prev-defect"><b>Letztes Mal B.${insp.prevDatum ? ` (${esc(insp.prevDatum)})` : ''}${p.note ? ':' : ''}</b> ${esc(p.note || '')}
       ${thumbsHTML(p.photos)}</div>` : '';
   const note = s === 'b' ? `
     <div class="defect">
@@ -429,7 +430,7 @@ function renderSection(sec) {
       </div>
       ${sec.items.map(rowHTML).join('')}
     </main>
-    ${bottomBar(untouched.length ? `Weiter (${untouched.length} leer) ›` : 'Weiter ›', untouched.length ? '' : 'ready')}`;
+    ${bottomBar('Weiter ›')}`;
   hydrateThumbs();
 }
 
@@ -510,12 +511,10 @@ function renderFinish() {
         <div class="tiles">
           <div class="tile green"><b>${st.ok}</b><span>o.B.</span></div>
           <div class="tile red"><b>${st.b}</b><span>B.</span></div>
-          <div class="tile gray"><b>${st.open}</b><span>leer</span></div>
+          <div class="tile gray"><b>${st.open}</b><span>trifft nicht zu</span></div>
         </div>
         ${insp.prev ? `<p class="muted small center">Seit ${esc(insp.prevDatum || 'letztem Mal')}: ${st.same} unverändert bestätigt, <b>${st.changed} geändert</b></p>` : ''}
-        ${st.open ? `
-          <p class="muted">${st.open} Punkte bleiben leer (wie ein leeres Kästchen auf Papier). Zum Nachsehen antippen:</p>
-          ${openSecs.map(x => `<button class="list-row" data-act="goto" data-step="${x.i + 1}"><span>${esc(x.s.title)}</span><span class="pill">${x.n} leer ›</span></button>`).join('')}` : ''}
+
       </section>
 
       <section class="card">
@@ -523,7 +522,7 @@ function renderFinish() {
         ${defects.length ? `<ol class="defects">${defects.map(it => {
           const a = insp.answers[it.id];
           const sIdx = tpl.sections.findIndex(s => s.items.includes(it)) + 1;
-          return `<li><button class="link" data-act="goto" data-step="${sIdx}"><b>${esc(it.label)}</b>${a.note ? `: ${esc(a.note)}` : ' <span class="red">(keine Beschreibung)</span>'}${a.photos?.length ? ` <span class="pill">📷 ${a.photos.length}</span>` : ''}</button></li>`;
+          return `<li><button class="link" data-act="goto" data-step="${sIdx}"><b>${esc(it.label)}</b>${a.note ? `: ${esc(a.note)}` : ''}${a.photos?.length ? ` <span class="pill">📷 ${a.photos.length}</span>` : ''}</button></li>`;
         }).join('')}</ol>` : ''}
         <textarea class="field" rows="3" data-f="remarks" placeholder="${defects.length ? 'Weitere Bemerkungen' : 'z. B. Ohne Mängel'}">${esc(insp.remarks)}</textarea>
         ${!defects.length && !insp.remarks ? '<div class="chips"><button class="chip" data-act="remark" data-v="Ohne Mängel">Ohne Mängel</button></div>' : ''}
@@ -595,9 +594,6 @@ function initSigPad(who) {
 
 async function finish() {
   const st = stats();
-  if (!st.ok && !st.b) { snack('Noch kein Prüfpunkt angekreuzt.'); return; }
-  const missingDesc = allItems().filter(it => insp.answers[it.id]?.s === 'b' && !insp.answers[it.id].note);
-  if (missingDesc.length) { snack(`${missingDesc.length} Mängel ohne Beschreibung.`); return; }
   if (!insp.sig.an.img) { snack('Bitte als Prüfer unterschreiben.'); return; }
   if (!insp.sig.ag.img && !insp.sig.ag.absent) { snack('Unterschrift Auftraggeber fehlt (oder „Niemand vor Ort“ ankreuzen).'); return; }
 
@@ -870,7 +866,7 @@ window.addEventListener('afterprint', fitPrint);
 // ---------- Abschnittswahl (Bottom Sheet) ----------
 function openJump() {
   const sheet = document.getElementById('sheet');
-  const labels = { done: '✓', defect: '✗', 'defect-open': '✗', partial: '…', open: '', na: '–' };
+  const labels = { done: '✓', defect: '✗', open: '' };
   sheet.innerHTML = `<div class="sheet-inner">
     <div class="sheet-grab"></div>
     ${Array.from({ length: stepCount() }, (_, i) => {
