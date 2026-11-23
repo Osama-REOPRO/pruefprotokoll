@@ -137,6 +137,12 @@ async function route() {
     const ids = (await visitItems(v)).map(i => i.id);
     return renderPrint(ids, `#/t/${v.id}`);
   }
+  if (parts[0] === 'daten') {
+    if (insp) await saveNow();
+    insp = null; tpl = null; visit = null;
+    releaseAwake();
+    return renderData();
+  }
   if (parts[0] === 't' && parts[1]) {
     if (insp) await saveNow();
     insp = null; tpl = null;
@@ -202,6 +208,7 @@ async function renderHome() {
       ${open.length ? `<section class="card"><h2>Termine</h2>${open.map(visitRow).join('')}</section>` : ''}
       ${done.length ? `<section class="card"><h2>Erledigt</h2>${done.slice(0, 30).map(visitRow).join('')}</section>` : ''}
       ${single.length ? `<section class="card"><h2>Einzelne Prüfungen</h2>${single.slice(0, 30).map(listRow).join('')}</section>` : ''}
+      ${all.length || visits.length ? `<button class="big-btn ghost" data-act="toData">Kunden, Objekte, Türen &amp; Tore verwalten</button>` : ''}
       ${!all.length && !visits.length ? `<p class="empty">Noch keine Termine. Im Büro einen Termin anlegen: Kunde, Objekt und die Tore eintragen. Vor Ort dann nur noch die Checkliste.<br><br>Alles wird nur auf diesem Handy gespeichert und funktioniert auch ohne Netz.</p>` : ''}
     </main>`;
 }
@@ -585,6 +592,7 @@ function renderFinish() {
       <button class="big-btn" data-act="print">🖨 Protokoll ansehen / drucken / PDF</button>
       <button class="big-btn ghost" data-act="duplicate" data-id="${insp.id}">⧉ ${esc(unitOf(insp).noun)} duplizieren (gleiche Häkchen)</button>
       <p class="disclaimer">${tpl.disclaimer.map(esc).join(' ')}</p>
+      <button class="big-btn danger" data-act="askDel" data-kind="inspection" data-id="${insp.id}">🗑 Dieses Protokoll löschen</button>
     </main>
     <nav class="bottom">
       <button class="nav-btn" data-act="prev">‹ Zurück</button>
@@ -747,6 +755,111 @@ async function duplicateItem(id) {
   setTimeout(() => snack(`Kopie angelegt. Bitte Standort${u.nr ? ' und ' + u.nrLabel : ''} eintragen.`), 250);
 }
 
+// ---------- Löschen ----------
+// Was mitgelöscht wird: Kunde -> seine Objekte, Termine, Protokolle; Objekt -> seine Türen/Tore, Termine, Protokolle;
+// Termin -> seine Protokolle. Eine bekannte Tür / ein bekanntes Tor löscht nur den Stammdatensatz,
+// alte Protokolle in früheren Terminen bleiben erhalten.
+let pendingDelete = null;
+async function deletePlan(kind, id) {
+  const [customers, sites, gates, visits, inspections] = await Promise.all(['customers', 'sites', 'gates', 'visits', 'inspections'].map(x => db.all(x)));
+  const p = { kind, id, customers: [], sites: [], gates: [], visits: [], inspections: [] };
+  if (kind === 'customer') {
+    p.customers = [id];
+    p.sites = sites.filter(x => x.customerId === id).map(x => x.id);
+  }
+  if (kind === 'site') p.sites = [id];
+  if (kind === 'customer' || kind === 'site') {
+    const S = new Set(p.sites);
+    p.gates = gates.filter(g => S.has(g.siteId) || (kind === 'customer' && g.customerId === id)).map(g => g.id);
+    p.visits = visits.filter(v => S.has(v.siteId) || (kind === 'customer' && v.customerId === id)).map(v => v.id);
+  }
+  if (kind === 'visit') p.visits = [id];
+  if (kind === 'gate') p.gates = [id];
+  if (kind === 'inspection') p.inspections = [id];
+  const V = new Set(p.visits), S = new Set(p.sites);
+  if (kind !== 'gate' && kind !== 'inspection') p.inspections = inspections.filter(i => V.has(i.visitId) || S.has(i.siteId) || (kind === 'customer' && i.customerId === id)).map(i => i.id);
+  p.name = kind === 'customer' ? customers.find(x => x.id === id)?.name
+    : kind === 'site' ? [sites.find(x => x.id === id)?.name, sites.find(x => x.id === id)?.strasse].filter(Boolean).join(', ')
+    : kind === 'visit' ? visitTitle(visits.find(x => x.id === id) || {})
+    : kind === 'gate' ? (gates.find(x => x.id === id)?.standort || gates.find(x => x.id === id)?.label)
+    : unitOf(inspections.find(x => x.id === id) || {}).standort;
+  return p;
+}
+async function runDelete(p) {
+  if (!p) return;
+  const I = new Set(p.inspections);
+  if (insp && I.has(insp.id)) { p.backTo = insp.visitId && !p.visits.includes(insp.visitId) ? `#/t/${insp.visitId}` : '#/'; clearTimeout(saveTimer); insp = null; tpl = null; }
+  const photos = (await db.all('photos')).filter(ph => I.has(ph.inspectionId));
+  for (const ph of photos) await db.del('photos', ph.id);
+  for (const id of p.inspections) await db.del('inspections', id);
+  for (const store of ['visits', 'gates', 'sites', 'customers']) for (const id of p[store]) await db.del(store, id);
+  if (visit && p.visits.includes(visit.id)) visit = null;
+}
+function rerenderAfterDelete(p) {
+  const h = location.hash;
+  if (p?.backTo) return (location.hash = p.backTo);
+  if (/^#\/t\//.test(h) && !visit) return (location.hash = '#/');
+  if (/^#\/t\/.+\/edit/.test(h)) return renderVisitEdit();
+  if (/^#\/t\//.test(h)) return renderVisit();
+  if (h === '#/daten') return renderData();
+  return route();
+}
+async function askDelete(kind, id) {
+  const p = await deletePlan(kind, id);
+  pendingDelete = p;
+  const noun = { customer: 'Kunde', site: 'Objekt', visit: 'Termin', gate: 'Tür / Tor', inspection: 'Protokoll' }[kind];
+  const n = (k, one, many) => p[k].length ? `${p[k].length} ${p[k].length === 1 ? one : many}` : '';
+  const also = [n('sites', 'Objekt', 'Objekte'), n('gates', 'Tür / Tor', 'Türen und Tore'), n('visits', 'Termin', 'Termine'), n('inspections', 'Protokoll', 'Protokolle')]
+    .filter((x, i) => x && !(kind === 'site' && i === 0)).filter(x => !(kind === 'gate') && !(kind === 'inspection'));
+  const note = kind === 'gate' ? 'Sie wird nicht mehr vorgeschlagen. Frühere Protokolle in alten Terminen bleiben erhalten.'
+    : also.length ? `Dabei wird auch gelöscht: ${also.join(', ')}.` : '';
+  const sheet = document.getElementById('sheet');
+  sheet.innerHTML = `<div class="sheet-inner">
+    <div class="sheet-grab"></div>
+    <h2 class="sheet-h">${esc(noun)} löschen?</h2>
+    <p><b>${esc(p.name || noun)}</b></p>
+    ${note ? `<p class="muted">${esc(note)}</p>` : ''}
+    <p class="muted small">Das lässt sich nicht rückgängig machen.</p>
+    <button class="big-btn danger solid" data-act="confirmDel">🗑 Endgültig löschen</button>
+    <button class="big-btn" data-act="cancelDel">Abbrechen</button>
+  </div>`;
+  sheet.classList.add('show');
+}
+
+// Verwalten: Kunden mit ihren Objekten und Türen/Toren
+async function renderData() {
+  const [customers, sites, gates, visits] = await Promise.all(['customers', 'sites', 'gates', 'visits'].map(x => db.all(x)));
+  const byName = (a, b) => String(a.name || a.strasse || '').localeCompare(String(b.name || b.strasse || ''), 'de');
+  const known = new Set(customers.map(c => c.id));
+  const orphanSites = sites.filter(s => !known.has(s.customerId));
+  const delBtn = (kind, id, label) => `<button class="mini-x" data-act="askDel" data-kind="${kind}" data-id="${id}" aria-label="${esc(label)} löschen">🗑</button>`;
+  const siteHTML = (st) => {
+    const gs = gates.filter(g => g.siteId === st.id);
+    const nv = visits.filter(v => v.siteId === st.id).length;
+    return `<div class="data-site">
+      <div class="list-row static"><span class="row-main"><span><b>${esc([st.name, st.strasse].filter(Boolean).join(', ') || 'Objekt ohne Namen')}</b><br>
+        <span class="muted small">${esc(st.plzOrt || '')}${nv ? ` · ${nv} ${nv === 1 ? 'Termin' : 'Termine'}` : ''}</span></span></span>${delBtn('site', st.id, 'Objekt')}</div>
+      ${gs.map(g => `<div class="list-row static data-gate"><span class="row-main"><span><span class="kind">${esc(TEMPLATES[g.templateId]?.unit.noun || 'Tor')}</span> <b>${esc(g.standort || 'ohne Standort')}</b><br>
+        <span class="muted small">${esc(g.sub || '')}</span></span></span>${delBtn('gate', g.id, 'Tür / Tor')}</div>`).join('')}
+    </div>`;
+  };
+  $app.innerHTML = `
+    <header class="bar">
+      <button class="icon-btn" data-act="toHome" aria-label="Übersicht">‹</button>
+      <div class="bar-title">Kunden &amp; Objekte</div>
+    </header>
+    <main class="home">
+      ${customers.sort(byName).map(c => `<section class="card">
+        <div class="list-row static data-cust"><span class="row-main"><span><b>${esc(c.name || 'Kunde ohne Namen')}</b><br>
+          <span class="muted small">${esc([c.strasse, c.plzOrt].filter(Boolean).join(', '))}</span></span></span>${delBtn('customer', c.id, 'Kunde')}</div>
+        ${sites.filter(s => s.customerId === c.id).sort(byName).map(siteHTML).join('') || '<p class="muted small">Keine Objekte.</p>'}
+      </section>`).join('')}
+      ${orphanSites.length ? `<section class="card"><h2>Objekte ohne Kunde</h2>${orphanSites.sort(byName).map(siteHTML).join('')}</section>` : ''}
+      ${!customers.length && !orphanSites.length ? '<p class="empty">Noch keine Kunden gespeichert. Kunden, Objekte, Türen und Tore erscheinen hier, sobald ein Protokoll abgeschlossen wurde.</p>' : ''}
+      <p class="muted small">Termine löschen: Termin öffnen, ✎ antippen, ganz unten „Termin löschen“.</p>
+    </main>`;
+}
+
 // Vor Ort: Liste der Tore, Antippen führt direkt zur Checkliste
 async function renderVisit() {
   const v = visit, items = await visitItems(v);
@@ -813,17 +926,19 @@ async function renderVisitEdit() {
           const t = unitOf(i);
           const started = i.status === 'done' || Object.values(i.answers || {}).some(a => a.s);
           return `<div class="list-row static"><button class="row-main" data-act="editItem" data-id="${i.id}"><span><b>${esc(t.standort || `${t.noun} ohne Standort`)}</b><br><span class="muted small"><span class="kind">${esc(t.noun)}</span> ${esc(unitSub(t) || 'Daten eintragen ›')}</span></span></button>
-            ${started ? '' : `<button class="mini-x" data-act="removeItem" data-id="${i.id}" aria-label="Entfernen">×</button>`}</div>`;
+            <button class="mini-x" data-act="askDel" data-kind="inspection" data-id="${i.id}" data-quick="${started ? '' : '1'}" aria-label="Entfernen">×</button></div>`;
         }).join('')}
         ${gates.length ? `<h3 class="sub">Schon bekannt an diesem Objekt</h3>
-          ${gates.map(g => `<button class="list-row" data-act="addKnownGate" data-id="${g.id}">
-            <span><b>${esc(g.standort || g.data?.tor?.standort || g.label)}</b><br><span class="muted small"><span class="kind">${esc(TEMPLATES[g.templateId]?.unit.noun || 'Tor')}</span> ${esc(g.sub)}</span></span><span class="pill">＋</span></button>`).join('')}
+          ${gates.map(g => `<div class="list-row static"><button class="row-main" data-act="addKnownGate" data-id="${g.id}">
+            <span><b>${esc(g.standort || g.data?.tor?.standort || g.label)}</b><br><span class="muted small"><span class="kind">${esc(TEMPLATES[g.templateId]?.unit.noun || 'Tor')}</span> ${esc(g.sub)}</span></span><span class="pill">＋</span></button>
+            <button class="mini-x" data-act="askDel" data-kind="gate" data-id="${g.id}" aria-label="Löschen">🗑</button></div>`).join('')}
           ${gates.length > 1 ? `<button class="big-btn" data-act="addAllKnown">Alle ${gates.length} hinzufügen</button>` : ''}` : ''}
         <div class="two">
           <button class="big-btn" data-act="addNewGate" data-kind="tor">＋ Neues Tor</button>
           <button class="big-btn" data-act="addNewGate" data-kind="tuer">＋ Neue Tür</button>
         </div>
       </section>
+      <button class="big-btn danger" data-act="askDel" data-kind="visit" data-id="${v.id}">🗑 Termin löschen</button>
     </main>
     <nav class="bottom"><button class="nav-btn next ready" data-act="openVisit" data-id="${v.id}">Fertig ›</button></nav>`;
 
@@ -1021,7 +1136,13 @@ document.addEventListener('click', async (e) => {
     case 'toHome': return (location.hash = '#/');
     case 'openItem': return openItem(await db.get('inspections', b.dataset.id));
     case 'editItem': await saveVisit(); return (location.hash = `#/p/${b.dataset.id}/0`);
-    case 'removeItem': { await db.del('inspections', b.dataset.id); return renderVisitEdit(); }
+    case 'toData': return (location.hash = '#/daten');
+    case 'askDel': {
+      if (b.dataset.quick) { const p = await deletePlan('inspection', b.dataset.id); await runDelete(p); return rerenderAfterDelete(p); }
+      return askDelete(b.dataset.kind, b.dataset.id);
+    }
+    case 'confirmDel': { closeJump(); const p = pendingDelete; pendingDelete = null; await runDelete(p); buzz([20, 40, 20]); await rerenderAfterDelete(p); return setTimeout(() => snack('Gelöscht.'), 250); }
+    case 'cancelDel': pendingDelete = null; return closeJump();
     case 'pickSite': return pickSite(b.dataset.id);
     case 'addKnownGate': await saveVisit(); await addGateToVisit(b.dataset.id); buzz(); return renderVisitEdit();
     case 'addAllKnown': {

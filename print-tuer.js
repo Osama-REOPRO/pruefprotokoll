@@ -26,7 +26,7 @@ function crow(label, a = {}, extraCls = '') {
 }
 const hrow = (title, cols = false) => `<tr class="ph"><th>${esc(title)}</th><td class="pc">${cols ? 'o.B.' : ''}</td><td class="pc">${cols ? 'B.' : ''}</td><td class="pc">${cols ? 'n.v.' : ''}</td></tr>`;
 // Textzeile ohne Kästchen (Feststellanlage usw.)
-const trow = (label, val, bold = false) => `<tr class="pt"><td colspan="4"><span class="${bold ? 'blue b' : 'blue'}">${esc(label)}${label ? ':' : ''}</span> ${val ? ink(val) : ''}</td></tr>`;
+const trow = (label, val, cls = 'b') => `<tr class="pt"><td colspan="4"><span class="${cls}">${esc(label)}${label && !cls.includes('nocolon') ? ':' : ''}</span> ${val ? ink(val) : ''}</td></tr>`;
 
 export function printTuer(insp, tpl, photos = []) {
   const h = insp.header, ans = insp.answers;
@@ -53,31 +53,30 @@ export function printTuer(insp, tpl, photos = []) {
     ${hrow('10. Elektrische Anbauteile', true)}
     ${crow('Elektr.Türöffner vorhanden prüfen ggf justieren', A('elektro.oeffner'))}
     ${crow('Drehflügelantrieb prüfen ggf. justieren', A('elektro.antrieb'))}
-    ${trow('Typ', X('elektro.typ'))}
-    ${trow('Bedien-/ Ansteuerelemente', X('elektro.bedien'), true)}
+    ${trow('Typ', X('elektro.typ'), 'blue')}
+    ${trow('Bedien-/ Ansteuerelemente', X('elektro.bedien'), 'blue b')}
     ${trow('', '')}
-    ${hrow('11. Feststellanlage', false)}
-    ${trow('Hersteller', X('fst.hersteller'), true)}
-    ${trow('Typ', X('fst.typ'), true)}
-    ${trow('Rauchmelder', '', true)}
-    ${trow('Anzahl', X('fst.rm.anzahl'), true)}
-    ${trow('Typ', X('fst.rm.typ'), true)}
-    <tr class="pt"><td colspan="4"><span class="blue b">Anordnung gemäß DiBT:</span> &nbsp; ja ${mini(X('fst.rm.dibt') === 'ja')} &nbsp;&nbsp; nein ${mini(X('fst.rm.dibt') === 'nein')}</td></tr>
-    ${trow('Handauslöser', '', true)}
-    ${trow('Anzahl', X('fst.ha.anzahl'), true)}
-    ${trow('Typ', X('fst.ha.typ'), true)}
-    ${trow('Anordnung', X('fst.ha.anordnung'), true)}
-    ${trow('Haltemagnet', '', true)}
-    ${trow('Typ', X('fst.hm.typ'), true)}
+    <tr class="ph"><th colspan="4">11. Feststellanlage</th></tr>
+    ${trow('Hersteller', X('fst.hersteller'))}
+    ${trow('Typ', X('fst.typ'))}
+    ${trow('Rauchmelder', '', 'blue b nocolon')}
+    ${trow('Anzahl', X('fst.rm.anzahl'))}
+    ${trow('Typ', X('fst.rm.typ'))}
+    <tr class="pt"><td colspan="4"><span class="b">Anordnung gemäß DiBT:</span> &nbsp; ja ${mini(X('fst.rm.dibt') === 'ja')} &nbsp;&nbsp; nein ${mini(X('fst.rm.dibt') === 'nein')}</td></tr>
+    ${trow('Handauslöser', '', 'blue b nocolon')}
+    ${trow('Anzahl', X('fst.ha.anzahl'))}
+    ${trow('Typ', X('fst.ha.typ'))}
+    ${trow('Anordnung', X('fst.ha.anordnung'))}
+    ${trow('Haltemagnet', '', 'blue b nocolon')}
+    ${trow('Typ', X('fst.hm.typ'))}
     ${crow('<b>Befestigung</b>', A('fst.hm.befestigung'))}`;
 
   const page1 = `
   <section class="ppage ptuer">
     ${SIG_AND_HEAD.head(tpl.title, insp.angebot)}
     <table class="paddr">
-      <tr><td></td><td><b>Kunde:</b> ${kundeLines[0] ? ink(kundeLines[0]) : ''}</td></tr>
-      <tr><td><b>Objekt:</b> ${objLines[0] ? ink(objLines[0]) : ''}</td><td>${kundeLines[1] ? ink(kundeLines[1]) : ''}</td></tr>
-      ${pad(objLines.slice(1), 2).map((l, i) => `<tr><td>${l ? ink(l) : ''}</td><td>${kundeLines[i + 2] ? ink(kundeLines[i + 2]) : ''}</td></tr>`).join('')}
+      <tr><td><b>Objekt:</b> ${objLines[0] ? ink(objLines[0]) : ''}</td><td><b>Kunde:</b> ${kundeLines[0] ? ink(kundeLines[0]) : ''}</td></tr>
+      ${[1, 2, 3].map(i => `<tr><td>${objLines[i] ? ink(objLines[i]) : ''}</td><td>${kundeLines[i] ? ink(kundeLines[i]) : ''}</td></tr>`).join('')}
       <tr><td></td><td><b>Tür-Nr.:</b> ${t.tuerNr ? ink(t.tuerNr) : ''}</td></tr>
     </table>
     <div class="pline pstand"><span class="plab"><b>Standort/Lage:</b></span><span class="pval">${t.standort ? ink(t.standort) : ''}</span></div>
@@ -93,6 +92,7 @@ export function printTuer(insp, tpl, photos = []) {
       <div class="pline"><span class="plab blue b">Fabr.- Nr.:</span><span class="pval">${g.fabrNr ? ink(g.fabrNr) : ''}</span></div>
       <div class="pline"><span class="plab blue b">Typ:</span><span class="pval">${g.typ ? ink(g.typ) : ''}</span></div>
       <div class="pline"><span class="plab blue b">Anzahl d. Flügel:</span><span class="pval">${t.fluegel ? ink(t.fluegel) : ''}</span></div>
+      <div class="pline pnone"></div>
       <div class="pline"><span class="plab blue b">Baujahr:</span><span class="pval">${g.bj ? ink(g.bj) : ''}</span></div>
     </div>
     <div class="plegend">o.B= ohne Befund &nbsp; B.= Befund &nbsp;&nbsp;&nbsp;&nbsp; n.v.= nicht vorhanden</div>

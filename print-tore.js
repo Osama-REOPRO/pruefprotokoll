@@ -130,8 +130,8 @@ export function printTore(insp, tpl, photos = []) {
     <div class="prule"></div>
 
     <table class="paddr">
-      <tr><td><b>Objekt:</b></td><td><b>Kunde:</b> ${kundeLines[0] ? ink(kundeLines[0]) : ''}</td></tr>
-      ${pad(objLines, 4).map((l, i) => `<tr><td>${l ? ink(l) : ''}</td><td>${kundeLines[i + 1] ? ink(kundeLines[i + 1]) : ''}</td></tr>`).join('')}
+      <tr><td><b>Objekt:</b> ${objLines[0] ? ink(objLines[0]) : ''}</td><td><b>Kunde:</b> ${kundeLines[0] ? ink(kundeLines[0]) : ''}</td></tr>
+      ${pad([], 4).map((_, i) => `<tr><td>${objLines[i + 1] ? ink(objLines[i + 1]) : ''}</td><td>${kundeLines[i + 1] ? ink(kundeLines[i + 1]) : ''}</td></tr>`).join('')}
       <tr><td><b>Standort/Lage:</b> ${t.standort ? ink(t.standort) : ''}</td><td></td></tr>
     </table>
 
