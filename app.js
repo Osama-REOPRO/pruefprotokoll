@@ -426,10 +426,14 @@ function rowHTML(it) {
   const note = s === 'b' ? `
     <div class="defect">
       <div class="chips">${tpl.defectChips.map(c => `<button class="chip" data-act="chipNote" data-id="${it.id}" data-v="${esc(c)}">${esc(c)}</button>`).join('')}</div>
-      <textarea class="field" rows="2" data-note="${it.id}" placeholder="Mangel beschreiben (Mikrofon auf der Tastatur geht auch)">${esc(a.note)}</textarea>
+      <textarea class="field" rows="2" data-note="${it.id}" placeholder="Mangel beschreiben, steht auf dem Ausdruck neben der Zeile">${esc(a.note)}</textarea>
       ${thumbsHTML(a.photos, it.id, true)}
       <label class="photo-btn">📷 Foto aufnehmen<input type="file" accept="image/*" capture="environment" data-photo-for="${it.id}" hidden></label>
     </div>` : '';
+  // Kurze Notiz neben jeder Zeile (kommt auf dem Ausdruck in den freien Platz neben das Kästchen)
+  const shortNote = s === 'b' ? '' : (a.note || openNotes.has(it.id))
+    ? `<div class="row-note"><input class="field sm" data-note="${it.id}" value="${esc(a.note)}" placeholder="${p.note ? 'letztes Mal: ' + esc(p.note) : 'Notiz zu dieser Zeile'}" enterkeyhint="done" autocomplete="off"></div>`
+    : `<button class="note-btn" data-act="noteOpen" data-id="${it.id}">✎ Notiz${p.note ? ` <span class="muted">(letztes Mal: ${esc(p.note)})</span>` : ''}</button>`;
   const ghost = (v) => !s && p.s === v ? 'ghost' : '';
   return `<div class="row ${s || ''} ${!s && p.s ? 'has-prev' : ''} ${p.s === 'b' ? 'was-b' : ''}" id="r-${it.id}">
     <div class="row-lbl">${esc(it.label)}</div>
@@ -439,9 +443,11 @@ function rowHTML(it) {
       ${(tpl.states || ['ok', 'b']).map(v => { const [cls, icon, txt] = STATE_BTN[v];
         return `<button class="${cls} ${s === v ? 'on' : ''} ${ghost(v)}" data-act="set" data-id="${it.id}" data-v="${v}"><b>${icon}</b> ${txt}${ghost(v) ? '<i>letztes Mal</i>' : ''}</button>`; }).join('')}
     </div>
+    ${shortNote}
     ${note}
   </div>`;
 }
+const openNotes = new Set();
 
 function renderSection(sec) {
   const untouched = sec.items.filter(isCheck).filter(it => !insp.answers[it.id]?.s);
@@ -496,7 +502,7 @@ function bulk(sec, mode) {
     const p = insp.prev?.[it.id];
     if (mode === 'last') {
       if (!p?.s) continue;
-      insp.answers[it.id] = { ...(a || {}), s: p.s, ...(p.s === 'b' && !a?.note ? { note: p.note || '' } : {}) };
+      insp.answers[it.id] = { ...(a || {}), s: p.s, ...(p.note && !a?.note ? { note: p.note } : {}) };
     } else insp.answers[it.id] = { ...(a || {}), s: 'ok' };
     n++;
   }
@@ -695,7 +701,7 @@ function copyAllFromLast() {
     const p = insp.prev?.[it.id];
     if (!p?.s && p?.x === undefined) continue;
     const a = insp.answers[it.id] || {};
-    insp.answers[it.id] = { ...a, ...(p.s ? { s: p.s } : {}), ...(p.x !== undefined ? { x: structuredClone(p.x) } : {}), ...(p.s === 'b' ? { note: a.note || p.note || '' } : {}) };
+    insp.answers[it.id] = { ...a, ...(p.s ? { s: p.s } : {}), ...(p.x !== undefined ? { x: structuredClone(p.x) } : {}), ...(p.note || a.note ? { note: a.note || p.note } : {}) };
     if (p.s) n++;
   }
   if (!insp.remarks && insp.prevRemarks) insp.remarks = insp.prevRemarks;
@@ -1116,6 +1122,13 @@ document.addEventListener('click', async (e) => {
       } else a.x = a.x === b.dataset.v ? undefined : b.dataset.v;
       document.getElementById('r-' + it.id).outerHTML = rowHTML(it);
       buzz(); return saveNow();
+    }
+    case 'noteOpen': {
+      openNotes.add(b.dataset.id);
+      const row = document.getElementById('r-' + b.dataset.id);
+      const it = allItems().find(x => x.id === b.dataset.id);
+      if (row && it) { row.outerHTML = rowHTML(it); document.querySelector(`input[data-note="${b.dataset.id}"]`)?.focus(); }
+      return;
     }
     case 'chipNote': {
       const a = insp.answers[b.dataset.id];

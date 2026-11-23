@@ -1,5 +1,5 @@
 // Druckansicht: "Abnahme- / Inbetriebnahme- & Prüfprotokoll" für Türen, wie das Papierformular.
-import { esc, box, mini, ink, printDefectLines } from './print-tore.js';
+import { esc, box, mini, ink, pnote, printDefectLines } from './print-tore.js';
 
 const SIG_AND_HEAD = {
   head: (title, angebot) => `
@@ -22,7 +22,7 @@ const SIG_AND_HEAD = {
 
 // Zeile mit drei Kästchen o.B. / B. / n.v.
 function crow(label, a = {}, extraCls = '') {
-  return `<tr class="pi ${extraCls}"><td class="pl">${label}</td><td class="pc">${box(a.s === 'ok')}</td><td class="pc">${box(a.s === 'b')}</td><td class="pc">${box(a.s === 'nv')}</td></tr>`;
+  return `<tr class="pi ${extraCls}"><td class="pl">${pnote(a)}${label}</td><td class="pc">${box(a.s === 'ok')}</td><td class="pc">${box(a.s === 'b')}</td><td class="pc">${box(a.s === 'nv')}</td></tr>`;
 }
 const hrow = (title, cols = false) => `<tr class="ph"><th>${esc(title)}</th><td class="pc">${cols ? 'o.B.' : ''}</td><td class="pc">${cols ? 'B.' : ''}</td><td class="pc">${cols ? 'n.v.' : ''}</td></tr>`;
 // Textzeile ohne Kästchen (Feststellanlage usw.)

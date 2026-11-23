@@ -228,3 +228,8 @@ canvas.sig { width: 100%; height: 170px; background: #fff; border: 2px dashed va
 .data-site { border-top: 1px solid var(--line); padding-top: 6px; margin-top: 6px; }
 .data-gate { padding-left: 14px; }
 .data-cust .row-main b { font-size: 1.1em; }
+
+/* Notiz je Zeile */
+.note-btn { display: block; margin-top: 8px; background: none; border: 0; color: var(--brand); font-weight: 600; padding: 8px 2px; min-height: 40px; text-align: left; font-size: .95em; }
+.note-btn .muted { font-weight: 400; }
+.row-note { margin-top: 8px; }

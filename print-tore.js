@@ -76,6 +76,8 @@ const RIGHT = [
 export const box = (on) => `<span class="pbox ${on ? 'on' : ''}"></span>`;
 export const mini = (on) => `<span class="pbox sm ${on ? 'on' : ''}"></span>`;
 export const ink = (v) => `<span class="ink">${esc(v)}</span>`;
+// Notiz im freien Platz rechts neben dem Text der Zeile, wie handschriftlich auf Papier
+export const pnote = (a) => a?.note ? `<span class="pnote ink">${esc(a.note)}</span>` : '';
 
 function checklist(rows, ans) {
   return `<table class="pchk">${rows.map(([kind, text, id, withHead, opt]) => {
@@ -91,7 +93,7 @@ function checklist(rows, ans) {
     } else if (kind === 'f') {
       label = `<b class="blue">${esc(text)}</b> ${a.x ? ink(a.x) : ''}`;
     }
-    return `<tr class="pi ${kind === 'f' ? 'pf' : ''} ${opt === 'tall' ? 'tall' : ''}"><td class="pl">${label}</td><td class="pc">${box(a.s === 'ok')}</td><td class="pc">${box(a.s === 'b')}</td></tr>`;
+    return `<tr class="pi ${kind === 'f' ? 'pf' : ''} ${opt === 'tall' ? 'tall' : ''}"><td class="pl">${pnote(a)}${label}</td><td class="pc">${box(a.s === 'ok')}</td><td class="pc">${box(a.s === 'b')}</td></tr>`;
   }).join('')}</table>`;
 }
 

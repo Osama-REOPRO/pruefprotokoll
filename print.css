@@ -123,3 +123,4 @@
 .ptuer .premrow { min-height: 4.6mm; }
 .ptuer .popts { margin: .8mm 0 .5mm; }
 .ptuer .pgrund .pline { height: 4.8mm; }
+.pnote { float: right; max-width: 58%; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; margin-left: 2mm; font-size: .92em; }
