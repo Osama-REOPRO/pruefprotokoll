@@ -1,8 +1,21 @@
 import { TEMPLATE_TORE } from './template-tore.js';
+import { TEMPLATE_TUER } from './template-tuer.js';
 import { db, uid, requestPersistence } from './db.js';
 import { printTore } from './print-tore.js';
+import { printTuer } from './print-tuer.js';
 
-const TEMPLATES = { [TEMPLATE_TORE.id]: TEMPLATE_TORE };
+const TEMPLATES = { [TEMPLATE_TORE.id]: TEMPLATE_TORE, [TEMPLATE_TUER.id]: TEMPLATE_TUER };
+const BY_KIND = { tor: TEMPLATE_TORE, tuer: TEMPLATE_TUER };
+const PRINTERS = { [TEMPLATE_TORE.id]: printTore, [TEMPLATE_TUER.id]: printTuer };
+const STATE_BTN = { ok: ['s-ok', '✓', 'o.B.'], b: ['s-b', '✗', 'B.'], nv: ['s-nv', '–', 'n.v.'] };
+// Kurzbeschreibung eines Tors oder einer Tür (Standort, Typ, Nummer) unabhängig vom Formular
+function unitOf(i) {
+  const t = TEMPLATES[i.templateId] || TEMPLATE_TORE, u = t.unit, h = i.header || {};
+  const grp = h[u.group] || {};
+  const val = (k) => grp[k] ?? Object.values(h).find(g => g && g[k])?.[k];
+  return { noun: u.noun, standort: val(u.standort), typ: val(u.typ), nr: val(u.nr), nrLabel: u.nrLabel };
+}
+const unitSub = (u) => [u.typ, u.nr && `${u.nrLabel} ${u.nr}`].filter(Boolean).join(' · ');
 const $app = document.getElementById('app');
 
 // ---------- kleine Helfer ----------
@@ -29,18 +42,19 @@ let step = 0;         // 0 = Stammdaten, 1..n = Abschnitte, n+1 = Abschluss
 let undoState = null;
 
 const stepCount = () => tpl.sections.length + 2;
-const stepCountFor = () => TEMPLATE_TORE.sections.length + 1; // Abschluss-Schritt
-const allItems = () => tpl.sections.flatMap(s => s.items);
+const allItems = () => tpl.sections.flatMap(s => s.items).filter(it => it.id);
+const isCheck = (it) => it.id && !it.noStatus;
+const checkItems = () => allItems().filter(isCheck);
 
 function stats() {
   const a = insp.answers, prev = insp.prev || {};
-  let ok = 0, b = 0, open = 0, same = 0, changed = 0;
-  for (const it of allItems()) {
+  let ok = 0, b = 0, nv = 0, open = 0, same = 0, changed = 0;
+  for (const it of checkItems()) {
     const s = a[it.id]?.s;
-    if (s === 'ok') ok++; else if (s === 'b') b++; else open++;
+    if (s === 'ok') ok++; else if (s === 'b') b++; else if (s === 'nv') nv++; else open++;
     if (s && prev[it.id]?.s) (prev[it.id].s === s ? same++ : changed++);
   }
-  return { ok, b, open, same, changed, total: ok + b + open };
+  return { ok, b, nv, open, same, changed, total: ok + b + nv + open };
 }
 
 function stepStatus(i) {
@@ -50,7 +64,7 @@ function stepStatus(i) {
   }
   if (i === stepCount() - 1) return insp.status === 'done' ? 'done' : 'open';
   const sec = tpl.sections[i - 1];
-  const st = sec.items.map(it => insp.answers[it.id]?.s);
+  const st = sec.items.filter(isCheck).map(it => insp.answers[it.id]?.s);
   // Leere Zeile = trifft nicht zu (wie auf Papier). Abschnitt gilt als erledigt, sobald er angesehen wurde.
   if (st.includes('b')) return 'defect';
   return st.some(Boolean) || (insp.maxStep ?? 0) > i ? 'done' : 'open';
@@ -115,7 +129,10 @@ async function route() {
   if ((parts[0] === 'druck' || parts[0] === 'druck-t') && parts[1]) {
     if (insp) await saveNow();
     releaseAwake();
-    if (parts[0] === 'druck') return renderPrint([parts[1]], `#/p/${parts[1]}/${stepCountFor()}`);
+    if (parts[0] === 'druck') {
+      const r = await db.get('inspections', parts[1]);
+      return renderPrint([parts[1]], `#/p/${parts[1]}/${(TEMPLATES[r?.templateId]?.sections.length ?? 0) + 1}`);
+    }
     const v = await db.get('visits', parts[1]);
     const ids = (await visitItems(v)).filter(i => i.status === 'done').map(i => i.id);
     return renderPrint(ids, `#/t/${v.id}`);
@@ -177,7 +194,7 @@ async function renderHome() {
       ${resume ? `
         <button class="resume-card" data-act="open" data-id="${resume.id}">
           <span class="eyebrow">Weitermachen</span>
-          <strong>${esc(resume.header?.tor?.standort || inspTitle(resume))}</strong>
+          <strong>${esc(unitOf(resume).standort || inspTitle(resume))}</strong>
           <span class="muted">${esc(inspTitle(resume))}</span>
           ${progressMini(resume)}
         </button>` : ''}
@@ -207,12 +224,12 @@ function inspTitle(i) {
   return o.name || o.strasse || k.name || 'Neue Prüfung';
 }
 function inspSub(i) {
-  const t = i.header?.tor || {};
-  return [t.standort, t.typ, i.status === 'done' ? i.datum : null].filter(Boolean).join(' · ') || 'Noch keine Angaben';
+  const t = unitOf(i);
+  return [t.noun, t.standort, t.typ, i.status === 'done' ? i.datum : null].filter(Boolean).join(' · ') || 'Noch keine Angaben';
 }
 function progressMini(i) {
   const t = TEMPLATES[i.templateId];
-  const items = t.sections.flatMap(s => s.items);
+  const items = t.sections.flatMap(s => s.items).filter(isCheck);
   const answered = items.filter(it => i.answers?.[it.id]?.s).length;
   const defects = items.filter(it => i.answers?.[it.id]?.s === 'b').length;
   return `<span class="mini-progress"><span style="width:${Math.round(answered / items.length * 100)}%"></span></span>
@@ -246,14 +263,14 @@ function openKindPicker() {
 }
 
 async function newInspection(prefill = {}, { open = true, step: startStep = 0 } = {}) {
-  const tplNew = TEMPLATE_TORE;
+  const tplNew = TEMPLATES[prefill.templateId] || BY_KIND[prefill.kind] || TEMPLATE_TORE;
   // Antworten der letzten Prüfung dieses Tors als Vorschlag (nicht als Antwort) mitnehmen
   const prev = prefill.prev || null;
   const answers = {};
   if (prev) for (const [id, a] of Object.entries(prev)) if (a.x !== undefined && a.x !== '') answers[id] = { x: structuredClone(a.x) };
   const rec = {
     id: uid(), templateId: tplNew.id, templateVersion: tplNew.version, status: 'draft',
-    header: { kunde: {}, objekt: {}, tor: {}, antrieb: {}, fang: {}, ...structuredClone(prefill.header || {}) },
+    header: { ...Object.fromEntries(tplNew.header.map(g => [g.id, {}])), ...structuredClone(prefill.header || {}) },
     customerId: prefill.customerId || null, siteId: prefill.siteId || null, gateId: prefill.gateId || null,
     visitId: prefill.visitId || null, order: prefill.order ?? Date.now(),
     prev, prevDatum: prefill.prevDatum || null, prevRemarks: prefill.prevRemarks || '',
@@ -297,11 +314,11 @@ function refreshChrome() {
   if (segs) segs.outerHTML = topBar().match(/<div class="segs"[\s\S]*<\/div>/)[0];
   const nb = document.querySelector('.nav-btn.next');
   if (nb && step > 0 && step < stepCount() - 1) {
-    const open = tpl.sections[step - 1].items.filter(it => !insp.answers[it.id]?.s).length;
+    const open = tpl.sections[step - 1].items.filter(isCheck).filter(it => !insp.answers[it.id]?.s).length;
     nb.textContent = 'Weiter ›';
   }
   if (step > 0 && step < stepCount() - 1) {
-    const untouched = tpl.sections[step - 1].items.filter(it => !insp.answers[it.id]?.s);
+    const untouched = tpl.sections[step - 1].items.filter(isCheck).filter(it => !insp.answers[it.id]?.s);
     const ok = document.querySelector('[data-act="allOk"]');
     if (ok) ok.disabled = !untouched.length;
     const last = document.querySelector('[data-act="asLast"]');
@@ -323,7 +340,11 @@ function renderHeader() {
     return `<section class="card form-group">
       <h2>${esc(g.title)} <span class="muted small">${filled}/${g.fields.length}</span></h2>
       <div class="grid">
-      ${g.fields.map(f => `
+      ${g.fields.filter(f => !f.showIf || vals[f.showIf[0]] === f.showIf[1]).map(f => f.type === 'choice' ? `
+        <div class="fld">
+          <span class="lbl">${esc(f.label)}</span>
+          <span class="chips opt">${f.options.map(o => `<button type="button" class="chip ${vals[f.key] === o ? 'on' : ''}" data-act="hchoice" data-h="${g.id}.${f.key}" data-v="${esc(o)}">${esc(o)}</button>`).join('')}</span>
+        </div>` : `
         <label class="fld ${f.half ? 'half' : ''}">
           <span class="lbl">${esc(f.label)}${f.required ? ' <i class="req">*</i>' : ''}</span>
           <span class="inwrap">
@@ -373,7 +394,15 @@ async function hydrateThumbs(root = document) {
 }
 
 function rowHTML(it) {
+  if (it.heading) return `<h3 class="row-head">${esc(it.heading)}</h3>`;
   const a = insp.answers[it.id] || {};
+  // Nur Angabe, ohne o.B./B. (z. B. Typ, Anzahl bei der Feststellanlage)
+  if (it.noStatus) {
+    const input = it.choice
+      ? `<div class="chips opt">${it.choice.map(o => `<button class="chip ${a.x === o ? 'on' : ''}" data-act="xchoice" data-id="${it.id}" data-v="${esc(o)}">${esc(o)}</button>`).join('')}</div>`
+      : `<input class="field sm" data-x="${it.id}" value="${esc(a.x)}" ${it.inputmode ? `inputmode="${it.inputmode}"` : ''} enterkeyhint="next" autocomplete="off">`;
+    return `<div class="row info" id="r-${it.id}"><label class="row-lbl">${esc(it.label)}</label>${input}</div>`;
+  }
   const s = a.s;
   const p = insp.prev?.[it.id] || {};
   const ex = it.extra;
@@ -399,23 +428,23 @@ function rowHTML(it) {
     <div class="row-lbl">${esc(it.label)}</div>
     ${prevDefect}
     ${extra}
-    <div class="seg2" role="group">
-      <button class="s-ok ${s === 'ok' ? 'on' : ''} ${ghost('ok')}" data-act="set" data-id="${it.id}" data-v="ok"><b>✓</b> o.B.${ghost('ok') ? '<i>letztes Mal</i>' : ''}</button>
-      <button class="s-b ${s === 'b' ? 'on' : ''} ${ghost('b')}" data-act="set" data-id="${it.id}" data-v="b"><b>✗</b> B.${ghost('b') ? '<i>letztes Mal</i>' : ''}</button>
+    <div class="seg2 n${(tpl.states || ['ok', 'b']).length}" role="group">
+      ${(tpl.states || ['ok', 'b']).map(v => { const [cls, icon, txt] = STATE_BTN[v];
+        return `<button class="${cls} ${s === v ? 'on' : ''} ${ghost(v)}" data-act="set" data-id="${it.id}" data-v="${v}"><b>${icon}</b> ${txt}${ghost(v) ? '<i>letztes Mal</i>' : ''}</button>`; }).join('')}
     </div>
     ${note}
   </div>`;
 }
 
 function renderSection(sec) {
-  const untouched = sec.items.filter(it => !insp.answers[it.id]?.s);
+  const untouched = sec.items.filter(isCheck).filter(it => !insp.answers[it.id]?.s);
   const prevAvail = untouched.some(it => insp.prev?.[it.id]?.s);
-  const t = insp.header.tor || {};
+  const t = unitOf(insp);
   const first = step === 1;
   const nothingYet = !Object.values(insp.answers).some(a => a.s);
   const summary = first ? `
     <button class="gate-sum" data-act="goto" data-step="0">
-      <span><b>${esc(t.standort || 'Tor ohne Standort')}</b><br><span class="muted small">${esc([t.typ, t.fabrNr && 'Nr. ' + t.fabrNr, t.hersteller].filter(Boolean).join(' · ') || 'Tordaten eintragen')}</span></span>
+      <span><b>${esc(t.standort || `${t.noun} ohne Standort`)}</b><br><span class="muted small">${esc(t.noun)}${unitSub(t) ? ' · ' + esc(unitSub(t)) : ' · Daten eintragen'}</span></span>
       <span class="small link-ish">Daten ›</span>
     </button>
     ${insp.prev && nothingYet ? `<section class="card copy-last">
@@ -454,7 +483,7 @@ function setAnswer(id, v) {
 function bulk(sec, mode) {
   const before = structuredClone(insp.answers);
   let n = 0;
-  for (const it of sec.items) {
+  for (const it of sec.items.filter(isCheck)) {
     const a = insp.answers[it.id];
     if (a?.s) continue;
     const p = insp.prev?.[it.id];
@@ -467,7 +496,7 @@ function bulk(sec, mode) {
   buzz(20);
   saveNow(); renderStepKeepScroll();
   // Nur die Punkte zurücknehmen, die der Sammel-Knopf gesetzt hat und die seitdem nicht geändert wurden
-  const filled = sec.items.filter(it => !before[it.id]?.s && insp.answers[it.id]?.s).map(it => [it.id, insp.answers[it.id].s]);
+  const filled = sec.items.filter(isCheck).filter(it => !before[it.id]?.s && insp.answers[it.id]?.s).map(it => [it.id, insp.answers[it.id].s]);
   undoInline(mode === 'last' ? `${n} wie letztes Mal bestätigt` : `${n} auf o.B. gesetzt`, () => {
     for (const [id, v] of filled) {
       if (insp.answers[id]?.s !== v) continue;
@@ -508,10 +537,11 @@ function renderFinish() {
   $app.innerHTML = `${topBar()}
     <main class="step">
       <section class="card summary">
-        <div class="tiles">
+        <div class="tiles ${tpl.states?.includes('nv') ? 'four' : ''}">
           <div class="tile green"><b>${st.ok}</b><span>o.B.</span></div>
           <div class="tile red"><b>${st.b}</b><span>B.</span></div>
-          <div class="tile gray"><b>${st.open}</b><span>trifft nicht zu</span></div>
+          ${tpl.states?.includes('nv') ? `<div class="tile gray"><b>${st.nv}</b><span>n.v.</span></div>
+          <div class="tile gray"><b>${st.open}</b><span>leer</span></div>` : `<div class="tile gray"><b>${st.open}</b><span>trifft nicht zu</span></div>`}
         </div>
         ${insp.prev ? `<p class="muted small center">Seit ${esc(insp.prevDatum || 'letztem Mal')}: ${st.same} unverändert bestätigt, <b>${st.changed} geändert</b></p>` : ''}
 
@@ -558,7 +588,7 @@ function renderFinish() {
     <nav class="bottom">
       <button class="nav-btn" data-act="prev">‹ Zurück</button>
       ${insp.status === 'done'
-        ? (insp.visitId ? `<button class="nav-btn next ready" data-act="nextInVisit">Nächstes Tor ›</button>` : `<button class="nav-btn next ready" data-act="nextGate">＋ Nächstes Tor hier</button>`)
+        ? (insp.visitId ? `<button class="nav-btn next ready" data-act="nextInVisit">Nächstes ›</button>` : `<button class="nav-btn next ready" data-act="nextGate">＋ Nächstes Tor hier</button>`)
         : `<button class="nav-btn next ready" data-act="finish">Abschließen ✓</button>`}
     </nav>`;
   initSigPad('ag'); initSigPad('an');
@@ -624,9 +654,10 @@ async function upsertMasterData() {
   await db.put('gates', {
     ...(await db.get('gates', insp.gateId) || {}), id: insp.gateId, siteId: insp.siteId, customerId: insp.customerId,
     templateId: tpl.id, data: gateData, lastInspectionId: insp.id, lastInspected: insp.datum,
-    label: `${h.objekt.name || h.objekt.strasse || h.kunde.name || ''} · ${h.tor.standort || ''}`,
-    sub: [h.tor.typ, h.tor.fabrNr && 'Nr. ' + h.tor.fabrNr, 'zuletzt ' + insp.datum].filter(Boolean).join(' · '),
-    search: [h.kunde.name, h.objekt.name, h.objekt.strasse, h.objekt.plzOrt, h.tor.standort, h.tor.fabrNr, h.tor.typ].join(' '),
+    standort: unitOf(insp).standort || '',
+    label: `${h.objekt.name || h.objekt.strasse || h.kunde.name || ''} · ${unitOf(insp).standort || ''}`,
+    sub: [unitSub(unitOf(insp)), 'zuletzt ' + insp.datum].filter(Boolean).join(' · '),
+    search: [h.kunde.name, h.objekt.name, h.objekt.strasse, h.objekt.plzOrt, unitOf(insp).standort, unitOf(insp).nr, unitOf(insp).typ].join(' '),
   });
 }
 
@@ -636,7 +667,7 @@ async function prefillFromGate(gateId) {
   const site = await db.get('sites', g.siteId) || {};
   const cust = await db.get('customers', g.customerId) || {};
   const last = g.lastInspectionId ? await db.get('inspections', g.lastInspectionId) : null;
-  return { gateId, siteId: g.siteId, customerId: g.customerId,
+  return { gateId, siteId: g.siteId, customerId: g.customerId, templateId: g.templateId,
     header: { kunde: strip(cust), objekt: strip(site), ...structuredClone(g.data) },
     prev: last ? structuredClone(last.answers) : null, prevDatum: last?.datum || null, prevRemarks: last?.remarks || '' };
 }
@@ -706,13 +737,16 @@ async function renderVisit() {
       </section>
       ${items.length ? items.map(i => {
         const [cls, label] = itemState(i);
-        const t = i.header?.tor || {};
+        const t = unitOf(i);
         return `<button class="gate-row st-${cls}" data-act="openItem" data-id="${i.id}">
           <span class="gate-ico">${{ fertig: '✓', maengel: '✗', arbeit: '…', offen: '' }[cls]}</span>
-          <span class="gate-txt"><b>${esc(t.standort || 'Tor ohne Standort')}</b><br><span class="muted small">${esc([t.typ, t.fabrNr && 'Nr. ' + t.fabrNr].filter(Boolean).join(' · '))}</span></span>
+          <span class="gate-txt"><b>${esc(t.standort || `${t.noun} ohne Standort`)}</b><br><span class="muted small"><span class="kind">${esc(t.noun)}</span> ${esc(unitSub(t))}</span></span>
           <span class="pill ${cls === 'maengel' ? 'red' : cls === 'fertig' ? 'green' : ''}">${label}</span></button>`;
-      }).join('') : '<p class="empty">Noch keine Tore in diesem Termin.</p>'}
-      <button class="big-btn" data-act="addNewGate">＋ Tor hinzufügen</button>
+      }).join('') : '<p class="empty">Noch keine Tore oder Türen in diesem Termin.</p>'}
+      <div class="two">
+        <button class="big-btn" data-act="addNewGate" data-kind="tor">＋ Tor</button>
+        <button class="big-btn" data-act="addNewGate" data-kind="tuer">＋ Tür</button>
+      </div>
       ${done ? `<button class="big-btn" data-act="printVisit">🖨 ${done === 1 ? 'Fertiges Protokoll' : `Alle ${done} fertigen Protokolle`} drucken / PDF</button>` : ''}
     </main>`;
 }
@@ -747,18 +781,18 @@ async function renderVisitEdit() {
       <section class="card">
         <h2>Tore und Türen in diesem Termin <span class="muted small">${items.length}</span></h2>
         ${items.map(i => {
-          const t = i.header?.tor || {};
+          const t = unitOf(i);
           const started = i.status === 'done' || Object.values(i.answers || {}).some(a => a.s);
-          return `<div class="list-row static"><button class="row-main" data-act="editItem" data-id="${i.id}"><span><b>${esc(t.standort || 'Tor ohne Standort')}</b><br><span class="muted small">${esc([t.typ, t.fabrNr && 'Nr. ' + t.fabrNr].filter(Boolean).join(' · ') || 'Daten eintragen ›')}</span></span></button>
+          return `<div class="list-row static"><button class="row-main" data-act="editItem" data-id="${i.id}"><span><b>${esc(t.standort || `${t.noun} ohne Standort`)}</b><br><span class="muted small"><span class="kind">${esc(t.noun)}</span> ${esc(unitSub(t) || 'Daten eintragen ›')}</span></span></button>
             ${started ? '' : `<button class="mini-x" data-act="removeItem" data-id="${i.id}" aria-label="Entfernen">×</button>`}</div>`;
         }).join('')}
         ${gates.length ? `<h3 class="sub">Schon bekannt an diesem Objekt</h3>
           ${gates.map(g => `<button class="list-row" data-act="addKnownGate" data-id="${g.id}">
-            <span><b>${esc(g.data?.tor?.standort || g.label)}</b><br><span class="muted small">${esc(g.sub)}</span></span><span class="pill">＋</span></button>`).join('')}
+            <span><b>${esc(g.standort || g.data?.tor?.standort || g.label)}</b><br><span class="muted small"><span class="kind">${esc(TEMPLATES[g.templateId]?.unit.noun || 'Tor')}</span> ${esc(g.sub)}</span></span><span class="pill">＋</span></button>`).join('')}
           ${gates.length > 1 ? `<button class="big-btn" data-act="addAllKnown">Alle ${gates.length} hinzufügen</button>` : ''}` : ''}
         <div class="two">
-          <button class="big-btn" data-act="addNewGate">＋ Neues Tor</button>
-          <button class="big-btn" disabled title="Formular folgt">＋ Tür <span class="small">(Formular folgt)</span></button>
+          <button class="big-btn" data-act="addNewGate" data-kind="tor">＋ Neues Tor</button>
+          <button class="big-btn" data-act="addNewGate" data-kind="tuer">＋ Neue Tür</button>
         </div>
       </section>
     </main>
@@ -801,9 +835,9 @@ async function pickSite(siteId) {
   await saveVisit();
   renderVisitEdit();
 }
-async function addGateToVisit(gateId) {
+async function addGateToVisit(gateId, kind = 'tor') {
   const v = visit;
-  const pre = gateId ? await prefillFromGate(gateId) : { header: {} };
+  const pre = gateId ? await prefillFromGate(gateId) : { header: {}, kind };
   return newInspection({ ...pre, visitId: v.id, customerId: v.customerId, siteId: v.siteId, agName: v.agName,
     header: { ...pre.header, kunde: structuredClone(v.kunde), objekt: structuredClone(v.objekt) } }, { open: false, step: 1 });
 }
@@ -834,7 +868,7 @@ async function renderPrint(ids, backHash) {
         photos.push({ url: photoUrls.get(pid), caption: `${it.label}${a.note ? ': ' + a.note : ''}` });
       }
     }
-    pages += printTore(rec, t, photos);
+    pages += (PRINTERS[rec.templateId] || printTore)(rec, t, photos);
   }
   $app.innerHTML = `
     <div class="print-bar">
@@ -919,6 +953,17 @@ document.addEventListener('click', async (e) => {
       document.querySelector(`input[data-h="${b.dataset.h}"]`).value = b.dataset.v;
       buzz(); return saveNow();
     }
+    case 'hchoice': {
+      const [g, k] = b.dataset.h.split('.');
+      const grp = insp.header[g] ||= {};
+      grp[k] = grp[k] === b.dataset.v ? '' : b.dataset.v;
+      buzz(); saveNow(); return renderStepKeepScroll();
+    }
+    case 'xchoice': {
+      const a = insp.answers[b.dataset.id] ||= {};
+      a.x = a.x === b.dataset.v ? undefined : b.dataset.v;
+      rerenderRow(b.dataset.id); buzz(); return saveNow();
+    }
     case 'extra': {
       const it = allItems().find(x => x.id === b.dataset.id);
       const a = insp.answers[it.id] ||= {};
@@ -956,7 +1001,7 @@ document.addEventListener('click', async (e) => {
       for (const g of (await db.all('gates')).filter(g => g.siteId === visit.siteId && !items.some(i => i.gateId === g.id))) await addGateToVisit(g.id);
       buzz(); return renderVisitEdit();
     }
-    case 'addNewGate': { await saveVisit(); const r = await addGateToVisit(null); return (location.hash = `#/p/${r.id}/0`); }
+    case 'addNewGate': { await saveVisit(); const r = await addGateToVisit(null, b.dataset.kind || 'tor'); return (location.hash = `#/p/${r.id}/0`); }
     case 'printVisit': return (location.hash = `#/druck-t/${visit.id}`);
     case 'nextInVisit': return nextInVisit();
     case 'print': await saveNow(); return (location.hash = `#/druck/${insp.id}`);

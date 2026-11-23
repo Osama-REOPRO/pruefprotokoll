@@ -92,3 +92,29 @@
   .ppage:last-child { break-after: auto; }
   * { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
 }
+
+/* Türformular */
+.ptuer .ptitle { padding-top: 4mm; font-size: 10.5pt; }
+.ptuer .paddr td { height: 5mm; }
+.pstand { margin-top: 1mm; }
+.popts { display: grid; grid-template-columns: 1fr 1fr 1fr 1.1fr; gap: 3mm; margin: 1.2mm 0 1mm; font-size: 7.8pt; }
+.popts > div { display: flex; flex-direction: column; gap: .6mm; }
+.popt { white-space: nowrap; }
+.pgrund { display: grid; grid-template-columns: 1.2fr 1fr 1fr; column-gap: 4mm; }
+.pgrund .pline { height: 5.2mm; }
+.blue.b, .b { font-weight: 700; }
+.plegend { font-size: 7.4pt; margin: 1mm 0 .8mm; }
+.pchk.p3 .pc { width: 6.8mm; }
+.pchk .pt td { height: 4.6mm; border-bottom: .2mm solid #000; padding: 0 1.2mm; background: #fff; }
+.ptuer .pchk .ph th { text-align: left; }
+.ptuer .pchk th, .ptuer .pchk td { height: 4.55mm; }
+.pdisc.small { font-size: 6.6pt; line-height: 1.6; font-weight: 500; }
+.pstand { flex: none; }
+.ptuer { font-size: 7.6pt; }
+.ptuer .pgrid { grid-template-columns: 1.12fr 1fr; }
+.ptuer .paddr td { height: 4.4mm; }
+.ptuer .pchk th, .ptuer .pchk td, .ptuer .pchk .pt td { height: 4.4mm; line-height: 1.05; }
+.ptuer .pl { font-size: 7.3pt; }
+.ptuer .premrow { min-height: 4.6mm; }
+.ptuer .popts { margin: .8mm 0 .5mm; }
+.ptuer .pgrund .pline { height: 4.8mm; }

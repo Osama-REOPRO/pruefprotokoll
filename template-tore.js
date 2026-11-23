@@ -9,6 +9,8 @@ export const TEMPLATE_TORE = {
   id: 'tore-asr-a17-din14677',
   version: 1,
   kind: 'tor',
+  states: ['ok', 'b'],
+  unit: { group: 'tor', noun: 'Tor', standort: 'standort', typ: 'typ', nr: 'fabrNr', nrLabel: 'Nr.' },
   title: 'Prüfprotokoll kraftbetätigte Tore',
   subtitle: 'ASR A1.7 und DIN 14677',
 

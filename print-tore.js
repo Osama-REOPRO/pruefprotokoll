@@ -1,7 +1,7 @@
 // Druckansicht: bildet das Papierformular "Prüfprotokoll für kraftbetätigte Tore" auf A4 nach.
 // Das Layout gehört zum Formular. Ein Türformular bekommt später eine eigene Druckdatei.
 
-const esc = (s) => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+export const esc = (s) => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 
 // Zeilen genau wie auf Papier: [art, text, itemId]
 //   h = blaue fette Abschnittsüberschrift (mit o.B./B.-Spalte leer)
@@ -73,9 +73,9 @@ const RIGHT = [
   ['i', 'Wand- und Deckenklappen', 'schienen.klappen'],
 ];
 
-const box = (on) => `<span class="pbox ${on ? 'on' : ''}"></span>`;
-const mini = (on) => `<span class="pbox sm ${on ? 'on' : ''}"></span>`;
-const ink = (v) => `<span class="ink">${esc(v)}</span>`;
+export const box = (on) => `<span class="pbox ${on ? 'on' : ''}"></span>`;
+export const mini = (on) => `<span class="pbox sm ${on ? 'on' : ''}"></span>`;
+export const ink = (v) => `<span class="ink">${esc(v)}</span>`;
 
 function checklist(rows, ans) {
   return `<table class="pchk">${rows.map(([kind, text, id, withHead, opt]) => {
@@ -95,7 +95,7 @@ function checklist(rows, ans) {
   }).join('')}</table>`;
 }
 
-function line(label, value, unit = '', cls = '') {
+export function line(label, value, unit = '', cls = '') {
   return `<span class="pline ${cls}"><span class="plab">${label}</span><span class="pval">${value ? ink(value) : ''}</span>${unit ? `<span class="punit">${unit}</span>` : ''}</span>`;
 }
 
