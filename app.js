@@ -137,12 +137,6 @@ async function route() {
     const ids = (await visitItems(v)).map(i => i.id);
     return renderPrint(ids, `#/t/${v.id}`);
   }
-  if (parts[0] === 'daten') {
-    if (insp) await saveNow();
-    insp = null; tpl = null; visit = null;
-    releaseAwake();
-    return renderData();
-  }
   if (parts[0] === 't' && parts[1]) {
     if (insp) await saveNow();
     insp = null; tpl = null;
@@ -208,7 +202,6 @@ async function renderHome() {
       ${open.length ? `<section class="card"><h2>Termine</h2>${open.map(visitRow).join('')}</section>` : ''}
       ${done.length ? `<section class="card"><h2>Erledigt</h2>${done.slice(0, 30).map(visitRow).join('')}</section>` : ''}
       ${single.length ? `<section class="card"><h2>Einzelne Prüfungen</h2>${single.slice(0, 30).map(listRow).join('')}</section>` : ''}
-      ${all.length || visits.length ? `<button class="big-btn ghost" data-act="toData">Kunden, Objekte, Türen &amp; Tore verwalten</button>` : ''}
       ${!all.length && !visits.length ? `<p class="empty">Noch keine Termine. Im Büro einen Termin anlegen: Kunde, Objekt und die Tore eintragen. Vor Ort dann nur noch die Checkliste.<br><br>Alles wird nur auf diesem Handy gespeichert und funktioniert auch ohne Netz.</p>` : ''}
     </main>`;
 }
@@ -218,11 +211,11 @@ function visitRow({ v, items }) {
   const done = items.filter(i => i.status === 'done').length;
   const defects = items.filter(i => i.status === 'done' && Object.values(i.answers || {}).some(a => a.s === 'b')).length;
   const today = dateKey(v.datum) === dateKey(todayDE());
-  return `<button class="list-row" data-act="openVisit" data-id="${v.id}">
+  return `<div class="row-wrap"><button class="list-row" data-act="openVisit" data-id="${v.id}">
     <span><strong>${esc(visitTitle(v))}</strong><br>
       <span class="muted small">${today ? '<b class="today">Heute</b> · ' : esc(v.datum || '') + ' · '}${esc(v.kunde?.name || '')}</span><br>
       <span class="muted small">${items.length ? `${done} von ${items.length} fertig` : 'noch keine Tore'}${defects ? ` · <b class="red">${defects} mit Mängeln</b>` : ''}</span></span>
-    <span class="chev">›</span></button>`;
+    <span class="chev">›</span></button><button class="more-btn" data-act="menu" data-for="visit" data-id="${v.id}" aria-label="Mehr">⋯</button></div>`;
 }
 const visitTitle = (v) => [v.objekt?.name, v.objekt?.strasse].filter(Boolean).join(', ') || v.kunde?.name || 'Neuer Termin';
 
@@ -244,10 +237,10 @@ function progressMini(i) {
 }
 function listRow(i) {
   const defects = Object.values(i.answers || {}).filter(a => a.s === 'b').length;
-  return `<button class="list-row" data-act="open" data-id="${i.id}">
+  return `<div class="row-wrap"><button class="list-row" data-act="open" data-id="${i.id}">
     <span><strong>${esc(inspTitle(i))}</strong><br><span class="muted small">${esc(inspSub(i))}</span></span>
     ${i.status === 'done' ? (defects ? `<span class="pill red">${defects} Mängel</span>` : '<span class="pill green">o.B.</span>') : '<span class="pill">offen</span>'}
-  </button>`;
+  </button><button class="more-btn" data-act="menu" data-for="item" data-id="${i.id}" aria-label="Mehr">⋯</button></div>`;
 }
 function gateListHTML(gates, q) {
   q = q.trim().toLowerCase();
@@ -307,6 +300,7 @@ function topBar() {
         <span class="t">${esc(stepTitle(step))} <span class="caret">▾</span></span>
       </button>
       <span id="saved" class="saved ok">✓ gespeichert</span>
+      <button class="icon-btn" data-act="menu" data-for="insp" data-id="${insp.id}" aria-label="Mehr">⋯</button>
     </header>
     <div class="segs" data-act="jump">${segs}</div>`;
 }
@@ -807,7 +801,6 @@ function rerenderAfterDelete(p) {
   if (/^#\/t\//.test(h) && !visit) return (location.hash = '#/');
   if (/^#\/t\/.+\/edit/.test(h)) return renderVisitEdit();
   if (/^#\/t\//.test(h)) return renderVisit();
-  if (h === '#/daten') return renderData();
   return route();
 }
 async function askDelete(kind, id) {
@@ -832,38 +825,50 @@ async function askDelete(kind, id) {
   sheet.classList.add('show');
 }
 
-// Verwalten: Kunden mit ihren Objekten und Türen/Toren
-async function renderData() {
-  const [customers, sites, gates, visits] = await Promise.all(['customers', 'sites', 'gates', 'visits'].map(x => db.all(x)));
-  const byName = (a, b) => String(a.name || a.strasse || '').localeCompare(String(b.name || b.strasse || ''), 'de');
-  const known = new Set(customers.map(c => c.id));
-  const orphanSites = sites.filter(s => !known.has(s.customerId));
-  const delBtn = (kind, id, label) => `<button class="mini-x" data-act="askDel" data-kind="${kind}" data-id="${id}" aria-label="${esc(label)} löschen">🗑</button>`;
-  const siteHTML = (st) => {
-    const gs = gates.filter(g => g.siteId === st.id);
-    const nv = visits.filter(v => v.siteId === st.id).length;
-    return `<div class="data-site">
-      <div class="list-row static"><span class="row-main"><span><b>${esc([st.name, st.strasse].filter(Boolean).join(', ') || 'Objekt ohne Namen')}</b><br>
-        <span class="muted small">${esc(st.plzOrt || '')}${nv ? ` · ${nv} ${nv === 1 ? 'Termin' : 'Termine'}` : ''}</span></span></span>${delBtn('site', st.id, 'Objekt')}</div>
-      ${gs.map(g => `<div class="list-row static data-gate"><span class="row-main"><span><span class="kind">${esc(TEMPLATES[g.templateId]?.unit.noun || 'Tor')}</span> <b>${esc(g.standort || 'ohne Standort')}</b><br>
-        <span class="muted small">${esc(g.sub || '')}</span></span></span>${delBtn('gate', g.id, 'Tür / Tor')}</div>`).join('')}
-    </div>`;
-  };
-  $app.innerHTML = `
-    <header class="bar">
-      <button class="icon-btn" data-act="toHome" aria-label="Übersicht">‹</button>
-      <div class="bar-title">Kunden &amp; Objekte</div>
-    </header>
-    <main class="home">
-      ${customers.sort(byName).map(c => `<section class="card">
-        <div class="list-row static data-cust"><span class="row-main"><span><b>${esc(c.name || 'Kunde ohne Namen')}</b><br>
-          <span class="muted small">${esc([c.strasse, c.plzOrt].filter(Boolean).join(', '))}</span></span></span>${delBtn('customer', c.id, 'Kunde')}</div>
-        ${sites.filter(s => s.customerId === c.id).sort(byName).map(siteHTML).join('') || '<p class="muted small">Keine Objekte.</p>'}
-      </section>`).join('')}
-      ${orphanSites.length ? `<section class="card"><h2>Objekte ohne Kunde</h2>${orphanSites.sort(byName).map(siteHTML).join('')}</section>` : ''}
-      ${!customers.length && !orphanSites.length ? '<p class="empty">Noch keine Kunden gespeichert. Kunden, Objekte, Türen und Tore erscheinen hier, sobald ein Protokoll abgeschlossen wurde.</p>' : ''}
-      <p class="muted small">Termine löschen: Termin öffnen, ✎ antippen, ganz unten „Termin löschen“.</p>
-    </main>`;
+// ⋯-Menü: Aktionen direkt dort, wo Termin, Kunde, Objekt oder Tür/Tor angezeigt wird
+async function openMenu(forWhat, id) {
+  const del = (kind, kid, label) => `<button class="big-btn danger-row" data-act="askDel" data-kind="${kind}" data-id="${kid}">🗑 ${esc(label)}</button>`;
+  const go = (href, label) => `<button class="big-btn" data-act="menuGo" data-href="${href}">${label}</button>`;
+  const btn = (act, kid, label) => `<button class="big-btn" data-act="${act}" data-id="${kid}">${label}</button>`;
+  let title = '', rows = [];
+  if (forWhat === 'visit' || forWhat === 'kunde' || forWhat === 'objekt') {
+    const v = await db.get('visits', id); if (!v) return;
+    const kName = v.kunde?.name || 'Kunde', oName = [v.objekt?.name, v.objekt?.strasse].filter(Boolean).join(', ') || 'Objekt';
+    if (forWhat === 'visit') {
+      title = visitTitle(v);
+      rows = [go(`#/t/${v.id}/edit`, '✎ Termin bearbeiten'), go(`#/druck-t/${v.id}`, '🖨 Alle Protokolle drucken'), del('visit', v.id, 'Termin löschen'), del('site', v.siteId, `Objekt löschen: ${oName}`), del('customer', v.customerId, `Kunde löschen: ${kName}`)];
+    } else if (forWhat === 'kunde') { title = kName; rows = [del('customer', v.customerId, 'Kunde löschen')]; }
+    else { title = oName; rows = [del('site', v.siteId, 'Objekt löschen')]; }
+  } else if (forWhat === 'site') {
+    const st = await db.get('sites', id); if (!st) return;
+    const c = st.customerId && await db.get('customers', st.customerId);
+    title = [st.name, st.strasse].filter(Boolean).join(', ') || 'Objekt';
+    rows = [del('site', st.id, 'Objekt löschen'), ...(c ? [del('customer', c.id, `Kunde löschen: ${c.name || ''}`)] : [])];
+  } else if (forWhat === 'gate') {
+    const g = await db.get('gates', id); if (!g) return;
+    title = g.standort || g.label || 'Tür / Tor';
+    rows = [del('gate', g.id, 'Nicht mehr vorschlagen (löschen)')];
+  } else if (forWhat === 'item' || forWhat === 'insp') {
+    const i = await db.get('inspections', id) || (insp?.id === id ? insp : null); if (!i) return;
+    const u = unitOf(i);
+    title = `${u.noun} · ${u.standort || 'ohne Standort'}`;
+    const gate = i.gateId && await db.get('gates', i.gateId);
+    rows = [
+      ...(forWhat === 'item' ? [go(`#/p/${i.id}/0`, '✎ Daten bearbeiten')] : [go(`#/p/${i.id}/0`, '✎ Stammdaten')]),
+      btn('duplicate', i.id, `⧉ Kopie anlegen (gleiche Häkchen)`),
+      go(`#/druck/${i.id}`, '🖨 Drucken / PDF'),
+      del('inspection', i.id, i.visitId ? `${u.noun} aus diesem Termin löschen` : 'Protokoll löschen'),
+      ...(gate ? [del('gate', gate.id, `${u.noun} nicht mehr vorschlagen`)] : []),
+    ];
+  }
+  const sheet = document.getElementById('sheet');
+  sheet.innerHTML = `<div class="sheet-inner">
+    <div class="sheet-grab"></div>
+    <h2 class="sheet-h">${esc(title)}</h2>
+    ${rows.join('')}
+    <button class="big-btn" data-act="cancelDel">Abbrechen</button>
+  </div>`;
+  sheet.classList.add('show');
 }
 
 // Vor Ort: Liste der Tore, Antippen führt direkt zur Checkliste
@@ -875,6 +880,7 @@ async function renderVisit() {
       <button class="icon-btn" data-act="toHome" aria-label="Übersicht">‹</button>
       <div class="bar-title"><span class="small muted block">${esc(v.datum || '')} · ${esc(v.kunde?.name || '')}</span>${esc(visitTitle(v))}</div>
       <button class="icon-btn" data-act="editVisit" aria-label="Termin bearbeiten">✎</button>
+      <button class="icon-btn" data-act="menu" data-for="visit" data-id="${v.id}" aria-label="Mehr">⋯</button>
     </header>
     <main class="home">
       <section class="card visit-head">
@@ -889,7 +895,7 @@ async function renderVisit() {
           <span class="gate-ico">${{ fertig: '✓', maengel: '✗', arbeit: '…', offen: '' }[cls]}</span>
           <span class="gate-txt"><b>${esc(t.standort || `${t.noun} ohne Standort`)}</b><br><span class="muted small"><span class="kind">${esc(t.noun)}</span> ${esc(unitSub(t))}</span></span>
           <span class="pill ${cls === 'maengel' ? 'red' : cls === 'fertig' ? 'green' : ''}">${label}</span></button>
-          <button class="dup-btn" data-act="duplicate" data-id="${i.id}" aria-label="${esc(t.noun)} duplizieren">⧉<span>Kopie</span></button></div>`;
+          <button class="dup-btn" data-act="menu" data-for="item" data-id="${i.id}" aria-label="Mehr zu ${esc(t.noun)}">⋯</button></div>`;
       }).join('') : '<p class="empty">Noch keine Tore oder Türen in diesem Termin.</p>'}
       <div class="two">
         <button class="big-btn" data-act="addNewGate" data-kind="tor">＋ Tor</button>
@@ -906,7 +912,7 @@ async function renderVisitEdit() {
   const sites = await db.all('sites');
   const groupHTML = (gid) => {
     const g = TEMPLATE_TORE.header.find(x => x.id === gid);
-    return `<section class="card form-group"><h2>${esc(g.title)}</h2><div class="grid">${g.fields.map(f => `
+    return `<section class="card form-group"><h2 class="h-menu">${esc(g.title)}<button class="more-btn" data-act="menu" data-for="${gid}" data-id="${v.id}" aria-label="Mehr zu ${esc(g.title)}">⋯</button></h2><div class="grid">${g.fields.map(f => `
       <label class="fld ${f.half ? 'half' : ''}"><span class="lbl">${esc(f.label)}${f.required ? ' <i class="req">*</i>' : ''}</span>
         <input class="field" data-vh="${gid}.${f.key}" value="${esc(v[gid]?.[f.key])}" enterkeyhint="next" autocomplete="off"></label>`).join('')}</div></section>`;
   };
@@ -937,7 +943,7 @@ async function renderVisitEdit() {
         ${gates.length ? `<h3 class="sub">Schon bekannt an diesem Objekt</h3>
           ${gates.map(g => `<div class="list-row static"><button class="row-main" data-act="addKnownGate" data-id="${g.id}">
             <span><b>${esc(g.standort || g.data?.tor?.standort || g.label)}</b><br><span class="muted small"><span class="kind">${esc(TEMPLATES[g.templateId]?.unit.noun || 'Tor')}</span> ${esc(g.sub)}</span></span><span class="pill">＋</span></button>
-            <button class="mini-x" data-act="askDel" data-kind="gate" data-id="${g.id}" aria-label="Löschen">🗑</button></div>`).join('')}
+            <button class="more-btn" data-act="menu" data-for="gate" data-id="${g.id}" aria-label="Mehr">⋯</button></div>`).join('')}
           ${gates.length > 1 ? `<button class="big-btn" data-act="addAllKnown">Alle ${gates.length} hinzufügen</button>` : ''}` : ''}
         <div class="two">
           <button class="big-btn" data-act="addNewGate" data-kind="tor">＋ Neues Tor</button>
@@ -954,8 +960,8 @@ async function renderVisitEdit() {
     const draw = () => {
       const q = search.value.trim().toLowerCase();
       const hits = sites.filter(st => st.id !== v.siteId && (st.name || st.strasse || st.plzOrt)).filter(st => !q || [st.name, st.strasse, st.plzOrt, custs[st.customerId]?.name].join(' ').toLowerCase().includes(q)).slice(0, 8);
-      document.getElementById('siteList').innerHTML = hits.map(st => `<button class="list-row" data-act="pickSite" data-id="${st.id}">
-        <span><b>${esc([st.name, st.strasse].filter(Boolean).join(', '))}</b><br><span class="muted small">${esc([st.plzOrt, custs[st.customerId]?.name].filter(Boolean).join(' · '))}</span></span><span class="chev">›</span></button>`).join('') || (q ? '<p class="muted">Nichts gefunden.</p>' : '');
+      document.getElementById('siteList').innerHTML = hits.map(st => `<div class="row-wrap"><button class="list-row" data-act="pickSite" data-id="${st.id}">
+        <span><b>${esc([st.name, st.strasse].filter(Boolean).join(', '))}</b><br><span class="muted small">${esc([st.plzOrt, custs[st.customerId]?.name].filter(Boolean).join(' · '))}</span></span><span class="chev">›</span></button><button class="more-btn" data-act="menu" data-for="site" data-id="${st.id}" aria-label="Mehr">⋯</button></div>`).join('') || (q ? '<p class="muted">Nichts gefunden.</p>' : '');
     };
     search.addEventListener('input', draw); draw();
   }
@@ -1149,7 +1155,8 @@ document.addEventListener('click', async (e) => {
     case 'toHome': return (location.hash = '#/');
     case 'openItem': return openItem(await db.get('inspections', b.dataset.id));
     case 'editItem': await saveVisit(); return (location.hash = `#/p/${b.dataset.id}/0`);
-    case 'toData': return (location.hash = '#/daten');
+    case 'menu': return openMenu(b.dataset.for, b.dataset.id);
+    case 'menuGo': { closeJump(); return (location.hash = b.dataset.href); }
     case 'askDel': {
       if (b.dataset.quick) { const p = await deletePlan('inspection', b.dataset.id); await runDelete(p); return rerenderAfterDelete(p); }
       return askDelete(b.dataset.kind, b.dataset.id);
@@ -1171,7 +1178,7 @@ document.addEventListener('click', async (e) => {
     case 'printBack': return (location.hash = b.dataset.href || '#/');
     case 'doPrint': return window.print();
     case 'nextGate': return nextGateSameSite();
-    case 'duplicate': { if (insp) await saveNow(); return duplicateItem(b.dataset.id); }
+    case 'duplicate': { closeJump(); if (insp) await saveNow(); return duplicateItem(b.dataset.id); }
   }
 });
 
