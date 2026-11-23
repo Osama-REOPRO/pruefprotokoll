@@ -134,7 +134,7 @@ async function route() {
       return renderPrint([parts[1]], `#/p/${parts[1]}/${(TEMPLATES[r?.templateId]?.sections.length ?? 0) + 1}`);
     }
     const v = await db.get('visits', parts[1]);
-    const ids = (await visitItems(v)).filter(i => i.status === 'done').map(i => i.id);
+    const ids = (await visitItems(v)).map(i => i.id);
     return renderPrint(ids, `#/t/${v.id}`);
   }
   if (parts[0] === 't' && parts[1]) {
@@ -583,6 +583,7 @@ function renderFinish() {
         <label class="toggle"><input type="checkbox" id="rememberSig" ${settings.get('rememberSig', true) ? 'checked' : ''}><span>Name und Unterschrift für nächste Prüfungen merken</span></label>
       </section>
       <button class="big-btn" data-act="print">🖨 Protokoll ansehen / drucken / PDF</button>
+      <button class="big-btn ghost" data-act="duplicate" data-id="${insp.id}">⧉ ${esc(unitOf(insp).noun)} duplizieren (gleiche Häkchen)</button>
       <p class="disclaimer">${tpl.disclaimer.map(esc).join(' ')}</p>
     </main>
     <nav class="bottom">
@@ -624,8 +625,8 @@ function initSigPad(who) {
 
 async function finish() {
   const st = stats();
-  if (!insp.sig.an.img) { snack('Bitte als Prüfer unterschreiben.'); return; }
-  if (!insp.sig.ag.img && !insp.sig.ag.absent) { snack('Unterschrift Auftraggeber fehlt (oder „Niemand vor Ort“ ankreuzen).'); return; }
+  // Nichts blockiert: fehlende Unterschriften werden nur erwähnt
+  const unsigned = [!insp.sig.ag.img && !insp.sig.ag.absent && 'Auftraggeber', !insp.sig.an.img && 'Prüfer'].filter(Boolean);
 
   if (document.getElementById('rememberSig')?.checked) {
     settings.set('techSig', insp.sig.an.img); settings.set('techName', insp.sig.an.name); settings.set('rememberSig', true);
@@ -641,7 +642,7 @@ async function finish() {
   await saveNow();
   buzz([20, 60, 20]);
   renderFinish();
-  snack('Prüfung abgeschlossen und gespeichert.');
+  snack(unsigned.length ? `Gespeichert. Ohne Unterschrift ${unsigned.join(' und ')}, kann später ergänzt werden.` : 'Prüfung abgeschlossen und gespeichert.');
 }
 
 // Kunde, Objekt und Tor als eigene Datensätze ablegen, damit sie beim nächsten Mal vorbelegt sind
@@ -693,7 +694,7 @@ function copyAllFromLast() {
   buzz([20, 60, 20]);
   saveNow();
   go(stepCount() - 1);
-  setTimeout(() => snack(`${n} Punkte wie am ${insp.prevDatum || 'letzten Termin'} übernommen. Bitte noch unterschreiben.`), 150);
+  setTimeout(() => snack(`${n} Punkte wie am ${insp.prevDatum || 'letzten Termin'} übernommen.`), 150);
 }
 
 // ---------- Termine (ein Kunde, ein Objekt, ein Datum, mehrere Tore/Türen) ----------
@@ -719,6 +720,33 @@ function openItem(i) {
   location.hash = `#/p/${i.id}/${st}`;
 }
 
+// Tür/Tor duplizieren: gleiche Häkchen und Angaben, aber Standort und Nummer leer,
+// damit die Kopie nicht versehentlich als dasselbe Element durchgeht. Notizen und Fotos gehören zum Original.
+async function duplicateItem(id) {
+  const src = await db.get('inspections', id);
+  if (!src) return;
+  const t = TEMPLATES[src.templateId];
+  const header = structuredClone(src.header || {});
+  const u = t.unit;
+  if (header[u.group]) { delete header[u.group][u.standort]; delete header[u.group][u.nr]; }
+  const answers = {};
+  for (const [k, a] of Object.entries(src.answers || {})) {
+    const c = {};
+    if (a.s) c.s = a.s;
+    if (a.x !== undefined && a.x !== '') c.x = structuredClone(a.x);
+    if (Object.keys(c).length) answers[k] = c;
+  }
+  const rec = await newInspection({
+    templateId: src.templateId, header, customerId: src.customerId, siteId: src.siteId, gateId: null,
+    visitId: src.visitId, order: (src.order ?? 0) + 0.5, agName: src.sig?.ag?.name || '',
+  }, { open: false });
+  Object.assign(rec, { answers, angebot: !!src.angebot, ort: src.ort || '', copiedFrom: src.id, maxStep: t.sections.length });
+  await db.put('inspections', rec);
+  buzz();
+  location.hash = `#/p/${rec.id}/0`;
+  setTimeout(() => snack(`Kopie angelegt. Bitte Standort${u.nr ? ' und ' + u.nrLabel : ''} eintragen.`), 250);
+}
+
 // Vor Ort: Liste der Tore, Antippen führt direkt zur Checkliste
 async function renderVisit() {
   const v = visit, items = await visitItems(v);
@@ -738,16 +766,17 @@ async function renderVisit() {
       ${items.length ? items.map(i => {
         const [cls, label] = itemState(i);
         const t = unitOf(i);
-        return `<button class="gate-row st-${cls}" data-act="openItem" data-id="${i.id}">
+        return `<div class="gate-line"><button class="gate-row st-${cls}" data-act="openItem" data-id="${i.id}">
           <span class="gate-ico">${{ fertig: '✓', maengel: '✗', arbeit: '…', offen: '' }[cls]}</span>
           <span class="gate-txt"><b>${esc(t.standort || `${t.noun} ohne Standort`)}</b><br><span class="muted small"><span class="kind">${esc(t.noun)}</span> ${esc(unitSub(t))}</span></span>
-          <span class="pill ${cls === 'maengel' ? 'red' : cls === 'fertig' ? 'green' : ''}">${label}</span></button>`;
+          <span class="pill ${cls === 'maengel' ? 'red' : cls === 'fertig' ? 'green' : ''}">${label}</span></button>
+          <button class="dup-btn" data-act="duplicate" data-id="${i.id}" aria-label="${esc(t.noun)} duplizieren">⧉<span>Kopie</span></button></div>`;
       }).join('') : '<p class="empty">Noch keine Tore oder Türen in diesem Termin.</p>'}
       <div class="two">
         <button class="big-btn" data-act="addNewGate" data-kind="tor">＋ Tor</button>
         <button class="big-btn" data-act="addNewGate" data-kind="tuer">＋ Tür</button>
       </div>
-      ${done ? `<button class="big-btn" data-act="printVisit">🖨 ${done === 1 ? 'Fertiges Protokoll' : `Alle ${done} fertigen Protokolle`} drucken / PDF</button>` : ''}
+      ${items.length ? `<button class="big-btn" data-act="printVisit">🖨 ${items.length === 1 ? 'Protokoll' : `Alle ${items.length} Protokolle`} drucken / PDF</button>` : ''}
     </main>`;
 }
 
@@ -1008,6 +1037,7 @@ document.addEventListener('click', async (e) => {
     case 'printBack': return (location.hash = b.dataset.href || '#/');
     case 'doPrint': return window.print();
     case 'nextGate': return nextGateSameSite();
+    case 'duplicate': { if (insp) await saveNow(); return duplicateItem(b.dataset.id); }
   }
 });
 

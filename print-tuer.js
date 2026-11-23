@@ -7,8 +7,7 @@ const SIG_AND_HEAD = {
       <div class="pco"><b>Hotz Torservice GmbH</b><br>Bitterfelder Straße 12<br>12681 Berlin<br><b>Tel:</b> +49 30 934 986 40<br><b>Notdienst:</b> +49 1738650030</div>
       <div class="ptitle">${esc(title)}${angebot ? `<div class="ink angebot">Bitte um Angebot</div>` : ''}</div>
       <div class="plogo">
-        <div class="stripes"><i></i><i></i><i></i></div>
-        <div class="hotz">HOTZ</div><div class="ts">TORSERVICE<sup>GmbH</sup></div>
+        <img class="plogo-img" src="logo-hotz.jpg" alt="Hotz Torservice GmbH">
         <div class="hrb">Amtsgericht Bln-Charlottenburg HRB 168433 B</div>
       </div>
     </header>

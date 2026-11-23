@@ -26,6 +26,7 @@
 .plogo .hotz { font: 900 23pt/0.95 "Arial Black", Arial, sans-serif; letter-spacing: -.5pt; color: #222; }
 .plogo .ts { font: 900 8.6pt/1 Arial, sans-serif; color: #1b5fae; letter-spacing: .3pt; }
 .plogo .ts sup { font-size: 4.5pt; }
+.plogo-img { display: block; width: 36mm; height: auto; margin-left: auto; }
 .plogo .hrb { font-size: 6pt; margin-top: 3mm; white-space: nowrap; }
 .prule { height: .6mm; background: #1b5fae; margin: 2mm 0 1.5mm 8mm; }
 

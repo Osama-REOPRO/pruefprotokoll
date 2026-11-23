@@ -123,8 +123,7 @@ export function printTore(insp, tpl, photos = []) {
       <div class="ptitle">Prüfprotokoll für kraftbetätigte Tore<br>gemäß den Richtlinien ASR A 1.7 und DIN 14677
         ${insp.angebot ? `<div class="ink angebot">Bitte um Angebot</div>` : ''}</div>
       <div class="plogo">
-        <div class="stripes"><i></i><i></i><i></i></div>
-        <div class="hotz">HOTZ</div><div class="ts">TORSERVICE<sup>GmbH</sup></div>
+        <img class="plogo-img" src="logo-hotz.jpg" alt="Hotz Torservice GmbH">
         <div class="hrb">Amtsgericht Bln-Charlottenburg HRB 168433 B</div>
       </div>
     </header>
