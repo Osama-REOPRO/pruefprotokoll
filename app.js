@@ -289,6 +289,20 @@ function stepTitle(i) {
   if (i === stepCount() - 1) return 'Abschluss';
   return tpl.sections[i - 1].title;
 }
+// Großer Bildschirm: Abschnitte dauerhaft links (auf dem Handy per CSS ausgeblendet)
+function sideSteps() {
+  const labels = { done: '✓', defect: '✗', open: '' };
+  return `<aside class="side-steps">${Array.from({ length: stepCount() }, (_, i) => {
+    const st = stepStatus(i);
+    let count = '';
+    if (i > 0 && i < stepCount() - 1) {
+      const items = tpl.sections[i - 1].items.filter(isCheck);
+      count = items.length ? `${items.filter(it => insp.answers[it.id]?.s).length}/${items.length}` : '';
+    }
+    return `<button class="side-step ${i === step ? 'cur' : ''}" data-act="goto" data-step="${i}"><span class="dot st-${st}">${labels[st] ?? ''}</span><span class="side-t">${esc(stepTitle(i))}</span><span class="muted small">${count}</span></button>`;
+  }).join('')}
+  <button class="side-help" data-act="keys">⌨ Tastenkürzel <kbd>?</kbd></button></aside>`;
+}
 function topBar() {
   const n = stepCount();
   const segs = Array.from({ length: n }, (_, i) => `<span class="seg st-${stepStatus(i)} ${i === step ? 'cur' : ''}"></span>`).join('');
@@ -302,17 +316,20 @@ function topBar() {
       <span id="saved" class="saved ok">✓ gespeichert</span>
       <button class="icon-btn" data-act="menu" data-for="insp" data-id="${insp.id}" aria-label="Mehr">⋯</button>
     </header>
-    <div class="segs" data-act="jump">${segs}</div>`;
+    <div class="segs" data-act="jump">${segs}</div>${sideSteps()}`;
 }
 function bottomBar(nextLabel, nextClass = '') {
   return `<nav class="bottom">
     <button class="nav-btn" data-act="prev" ${step === 0 ? 'disabled' : ''}>‹ Zurück</button>
     <button class="nav-btn next ${nextClass}" data-act="next">${nextLabel}</button>
+    <button class="kb-hint" data-act="keys"><kbd>1</kbd> o.B. <kbd>2</kbd> B.${(tpl.states || []).includes('nv') ? ' <kbd>3</kbd> n.v.' : ''} · <kbd>↑</kbd><kbd>↓</kbd> Zeile · <kbd>←</kbd><kbd>→</kbd> Abschnitt · <kbd>?</kbd> alle Kürzel</button>
   </nav>`;
 }
 function refreshChrome() {
   const segs = document.querySelector('.segs');
-  if (segs) segs.outerHTML = topBar().match(/<div class="segs"[\s\S]*<\/div>/)[0];
+  if (segs) segs.outerHTML = `<div class="segs" data-act="jump">${Array.from({ length: stepCount() }, (_, i) => `<span class="seg st-${stepStatus(i)} ${i === step ? 'cur' : ''}"></span>`).join('')}</div>`;
+  const side = document.querySelector('.side-steps');
+  if (side) side.outerHTML = sideSteps();
   const nb = document.querySelector('.nav-btn.next');
   if (nb && step > 0 && step < stepCount() - 1) {
     const open = tpl.sections[step - 1].items.filter(isCheck).filter(it => !insp.answers[it.id]?.s).length;
@@ -468,6 +485,7 @@ function renderSection(sec) {
     </main>
     ${bottomBar('Weiter ›')}`;
   hydrateThumbs();
+  kbIdx = -1;
 }
 
 function rerenderRow(id) {
@@ -1156,6 +1174,7 @@ document.addEventListener('click', async (e) => {
     case 'openItem': return openItem(await db.get('inspections', b.dataset.id));
     case 'editItem': await saveVisit(); return (location.hash = `#/p/${b.dataset.id}/0`);
     case 'menu': return openMenu(b.dataset.for, b.dataset.id);
+    case 'keys': return openKeys();
     case 'menuGo': { closeJump(); return (location.hash = b.dataset.href); }
     case 'askDel': {
       if (b.dataset.quick) { const p = await deletePlan('inspection', b.dataset.id); await runDelete(p); return rerenderAfterDelete(p); }
@@ -1198,6 +1217,82 @@ document.addEventListener('change', (e) => {
   const f = e.target.dataset?.photoFor;
   if (f && e.target.files?.[0]) { addPhoto(f, e.target.files[0]); e.target.value = ''; return; }
   if (e.target.type === 'checkbox') e.target.dispatchEvent(new Event('input', { bubbles: true })); });
+
+// ---------- Tastenkürzel (für Tastatur am Rechner) ----------
+const KEYS = [
+  ['1 / O', 'o.B.'], ['2 / B', 'B. (Befund), danach direkt Notiz tippen'], ['3 / V', 'n.v. (Türen)'],
+  ['↓ / J', 'nächste Zeile'], ['↑ / K', 'vorige Zeile'], ['N', 'Notiz zur Zeile'],
+  ['→', 'nächster Abschnitt'], ['←', 'voriger Abschnitt'],
+  ['A', 'Rest o.B.'], ['L', 'Wie letztes Mal'], ['P', 'Drucken / PDF'],
+  ['Esc', 'Feld verlassen / Fenster schließen'], ['?', 'diese Hilfe'],
+];
+function openKeys() {
+  const sheet = document.getElementById('sheet');
+  sheet.innerHTML = `<div class="sheet-inner keys">
+    <div class="sheet-grab"></div>
+    <h2 class="sheet-h">Tastenkürzel</h2>
+    <table class="keys-t">${KEYS.map(([k, d]) => `<tr><td>${k.split(' / ').map(x => `<kbd>${esc(x)}</kbd>`).join(' ')}</td><td>${esc(d)}</td></tr>`).join('')}</table>
+    <p class="muted small">Gilt beim Ausfüllen der Prüfpunkte. In Textfeldern wird normal getippt, Esc springt zurück.</p>
+    <button class="big-btn" data-act="cancelDel">Schließen</button>
+  </div>`;
+  sheet.classList.add('show');
+}
+let kbIdx = -1;
+const kbRows = () => [...document.querySelectorAll('main.step .row')];
+function kbSelect(i, scroll = true) {
+  const rows = kbRows();
+  if (!rows.length) return;
+  kbIdx = Math.max(0, Math.min(rows.length - 1, i));
+  rows.forEach((r, j) => r.classList.toggle('kb-cur', j === kbIdx));
+  if (scroll) rows[kbIdx].scrollIntoView({ block: 'center', behavior: 'smooth' });
+}
+function kbCurId() { return kbRows()[kbIdx]?.id?.replace(/^r-/, ''); }
+document.addEventListener('keydown', (e) => {
+  if (e.ctrlKey || e.metaKey || e.altKey) return;
+  const t = e.target;
+  const typing = t.tagName === 'INPUT' || t.tagName === 'TEXTAREA' || t.isContentEditable;
+  const sheetOpen = document.getElementById('sheet').classList.contains('show');
+  if (e.key === 'Escape') {
+    if (sheetOpen) { e.preventDefault(); return closeJump(); }
+    if (typing) { e.preventDefault(); const row = t.closest('.row'); t.blur(); if (row) kbSelect(kbRows().indexOf(row), false); }
+    return;
+  }
+  if (typing || sheetOpen) return;
+  const k = e.key.length === 1 ? e.key.toLowerCase() : e.key;
+  if (k === '?') { e.preventDefault(); return openKeys(); }
+  if (!insp || !tpl) return;
+  const inSection = step > 0 && step < stepCount() - 1;
+  const click = (sel) => { const el = document.querySelector(sel); if (el && !el.disabled) { el.click(); return true; } return false; };
+  if (k === 'ArrowRight') { e.preventDefault(); return click('.bottom [data-act=next], .bottom [data-act=finish], .bottom [data-act=nextInVisit], .bottom [data-act=nextGate]'); }
+  if (k === 'ArrowLeft') { e.preventDefault(); return click('.bottom [data-act=prev]'); }
+  if (k === 'p') { e.preventDefault(); saveNow(); return (location.hash = `#/druck/${insp.id}`); }
+  if (!inSection) return;
+  if (k === 'ArrowDown' || k === 'j') { e.preventDefault(); return kbSelect(kbIdx + 1); }
+  if (k === 'ArrowUp' || k === 'k') { e.preventDefault(); return kbSelect(kbIdx - 1); }
+  if (k === 'a') { e.preventDefault(); return click('[data-act=allOk]'); }
+  if (k === 'l') { e.preventDefault(); return click('[data-act=asLast]'); }
+  if (kbIdx < 0) kbSelect(0, false);
+  const id = kbCurId();
+  const row = kbRows()[kbIdx];
+  if (!id || !row) return;
+  if (k === 'Enter' && row.classList.contains('info')) { e.preventDefault(); return row.querySelector('input, .chip')?.focus(); }
+  const state = { '1': 'ok', o: 'ok', '2': 'b', b: 'b', '3': 'nv', v: 'nv' }[k];
+  if (state && row.querySelector(`[data-act=set][data-v=${state}]`)) {
+    e.preventDefault();
+    const was = insp.answers[id]?.s;
+    setAnswer(id, state);
+    kbSelect(kbIdx, false);
+    if (state === 'b' && was !== 'b') return document.querySelector(`textarea[data-note="${id}"]`)?.focus();
+    if (insp.answers[id]?.s) kbSelect(kbIdx + 1);
+    return;
+  }
+  if (k === 'n') {
+    e.preventDefault();
+    const inp = row.querySelector('[data-note]');
+    if (inp) return inp.focus();
+    row.querySelector('[data-act=noteOpen]')?.click();
+  }
+});
 
 // Enter springt ins nächste Feld (schnelles Tippen mit Handschuh)
 document.addEventListener('keydown', (e) => {
