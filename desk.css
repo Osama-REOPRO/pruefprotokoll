@@ -257,3 +257,6 @@ html.desk .dk-finish-nav { grid-column: 1 / -1; display: flex; flex-wrap: wrap; 
 html.desk .dk-finish-nav .nav-btn { height: 36px; min-height: 36px; padding: 0 20px; }
 html.desk .sec-check { margin: 12px 0 0; }
 html.desk .check-btn { min-height: 32px; height: 32px; padding: 0 14px; border-radius: 6px; border-width: 1px; font-size: .95em; }
+html.desk .dc-note { display: flex; gap: 6px; align-items: center; }
+html.desk .dc-note .field { flex: 1; min-width: 0; }
+html.desk .dc-more { flex: none; }

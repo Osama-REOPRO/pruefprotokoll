@@ -69,7 +69,7 @@ export function printTuer(insp, tpl, photos = []) {
     ${trow('Anordnung', X('fst.ha.anordnung'))}
     ${trow('Haltemagnet', '', 'blue b nocolon')}
     ${trow('Typ', X('fst.hm.typ'))}
-    ${crow('<b>Befestigung</b>', A('fst.hm.befestigung'))}`;
+    ${crow('<b>Befestigung</b>', A('fst.hm.befestigung'), 'pf')}`;
 
   const page1 = `
   <section class="ppage ptuer">

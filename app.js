@@ -606,17 +606,20 @@ function rowHTML(it) {
   // Mangel vom letzten Mal sichtbar machen, damit man prüft, ob er behoben ist
   const prevDefect = p.s === 'b' ? `<div class="prev-defect"><b>Letztes Mal B.${insp.prevDatum ? ` (${esc(insp.prevDatum)})` : ''}${p.note ? ':' : ''}</b> ${esc(p.note || '')}
       ${thumbsHTML(p.photos)}</div>` : '';
-  const note = s === 'b' ? `
+  const dOpen = s === 'b' && openDefects.has(it.id);
+  const note = dOpen ? `
     <div class="defect">
+      <button class="note-btn dclose" data-act="defectClose" data-id="${it.id}">▴ zuklappen</button>
       <div class="chips">${tpl.defectChips.map(c => `<button class="chip" data-act="chipNote" data-id="${it.id}" data-v="${esc(c)}">${esc(c)}</button>`).join('')}</div>
       <textarea class="field" rows="2" data-note="${it.id}" placeholder="Mangel beschreiben, steht auf dem Ausdruck neben der Zeile">${esc(a.note)}</textarea>
       ${thumbsHTML(a.photos, it.id, true)}
       <label class="photo-btn">📷 Foto aufnehmen<input type="file" accept="image/*" capture="environment" data-photo-for="${it.id}" hidden></label>
     </div>` : '';
   // Kurze Notiz neben jeder Zeile (kommt auf dem Ausdruck in den freien Platz neben das Kästchen)
-  const shortNote = s === 'b' ? '' : (a.note || openNotes.has(it.id))
+  const dBtn = s === 'b' && !dOpen ? `<button class="note-btn" data-act="defectOpen" data-id="${it.id}">📷 Foto / Vorschläge${a.photos?.length ? ` (${a.photos.length})` : ''}</button>` : '';
+  const shortNote = dOpen ? '' : (s === 'b' && !a.note && !openNotes.has(it.id) ? '<div class="note-line">' : '') + ((a.note || openNotes.has(it.id))
     ? `<div class="row-note"><input class="field sm" data-note="${it.id}" value="${esc(a.note)}" placeholder="${p.note ? 'letztes Mal: ' + esc(p.note) : 'Notiz zu dieser Zeile'}" enterkeyhint="done" autocomplete="off"></div>`
-    : `<button class="note-btn" data-act="noteOpen" data-id="${it.id}">✎ Notiz${p.note ? ` <span class="muted">(letztes Mal: ${esc(p.note)})</span>` : ''}</button>`;
+    : `<button class="note-btn" data-act="noteOpen" data-id="${it.id}">✎ Notiz${p.note ? ` <span class="muted">(letztes Mal: ${esc(p.note)})</span>` : ''}</button>`) + (s === 'b' ? dBtn + (!a.note && !openNotes.has(it.id) ? '</div>' : '') : '');
   const ghost = (v) => !s && p.s === v ? 'ghost' : '';
   return `<div class="row ${s || ''} ${!s && p.s ? 'has-prev' : ''} ${p.s === 'b' ? 'was-b' : ''}" id="r-${it.id}">
     <div class="row-lbl">${esc(it.label)}${guideLink(it)}</div>
@@ -631,6 +634,7 @@ function rowHTML(it) {
   </div>`;
 }
 const openNotes = new Set();
+const openDefects = new Set(); // B.-Zeilen, deren Mangel-Feld (Vorschläge, Foto) aufgeklappt ist
 // Kleiner Buch-Link neben der Zeile: springt zum passenden Abschnitt im Feldhandbuch
 function guideLink(it) {
   const sec = tpl.sections.find(s => s.items.includes(it));
@@ -1512,6 +1516,13 @@ document.addEventListener('click', async (e) => {
       document.getElementById('r-' + it.id).outerHTML = rowHTML(it);
       buzz(); return saveNow();
     }
+    case 'defectOpen': case 'defectClose': {
+      const id = b.dataset.id;
+      if (b.dataset.act === 'defectOpen') openDefects.add(id); else openDefects.delete(id);
+      rerenderRow(id);
+      if (b.dataset.act === 'defectOpen') document.querySelector(`textarea[data-note="${id}"]`)?.focus();
+      return;
+    }
     case 'noteOpen': {
       openNotes.add(b.dataset.id);
       const row = document.getElementById('r-' + b.dataset.id);
@@ -1700,7 +1711,6 @@ document.addEventListener('keydown', (e) => {
     const was = insp.answers[id]?.s;
     setAnswer(id, state);
     kbSelect(kbIdx, false);
-    if (state === 'b' && was !== 'b') return document.querySelector(`textarea[data-note="${id}"]`)?.focus();
     if (insp.answers[id]?.s) kbSelect(kbIdx + 1);
     return;
   }
@@ -1880,18 +1890,19 @@ function rowDesk(it) {
   const ghost = (v) => !s && p.s === v ? 'ghost' : '';
   const states = (tpl.states || ['ok', 'b']).map(v => { const [cls, icon, txt] = STATE_BTN[v];
     return `<button class="${cls} ${s === v ? 'on' : ''} ${ghost(v)}" data-act="set" data-id="${it.id}" data-v="${v}" title="${ghost(v) ? 'letztes Mal ' : ''}${txt}">${icon} ${txt}</button>`; }).join('');
-  const defect = s === 'b' ? `
+  const dOpen = s === 'b' && openDefects.has(it.id);
+  const defect = dOpen ? `
     <div class="dc-defect">
       <textarea class="field" rows="2" data-note="${it.id}" placeholder="Mangel beschreiben, steht auf dem Ausdruck neben der Zeile">${esc(a.note)}</textarea>
       <div class="dc-defect-tools"><span class="chips">${tpl.defectChips.map(c => `<button class="chip" data-act="chipNote" data-id="${it.id}" data-v="${esc(c)}">${esc(c)}</button>`).join('')}</span>
-      <label class="tb-btn sm">📷 Foto<input type="file" accept="image/*" data-photo-for="${it.id}" hidden></label></div>
+      <span><label class="tb-btn sm">📷 Foto<input type="file" accept="image/*" data-photo-for="${it.id}" hidden></label> <button class="tb-btn sm" data-act="defectClose" data-id="${it.id}">▴ zuklappen</button></span></div>
       ${thumbsHTML(a.photos, it.id, true)}
     </div>` : '';
   return `<div class="row drow ${s || ''} ${!s && p.s ? 'has-prev' : ''} ${p.s === 'b' ? 'was-b' : ''}" id="r-${it.id}">
     <div class="dc-lbl">${esc(it.label)}${guideLink(it)}${extra ? ` ${extra}` : ''}
       ${p.s === 'b' ? `<div class="dc-prev">Letztes Mal B.${insp.prevDatum ? ` (${esc(insp.prevDatum)})` : ''}${p.note ? ': ' + esc(p.note) : ''}</div>` : ''}</div>
     <div class="dc-st seg2 n${(tpl.states || ['ok', 'b']).length}" role="group">${states}</div>
-    <div class="dc-note">${s === 'b' ? '<span class="muted small">siehe unten</span>' : `<input class="field xs" data-note="${it.id}" value="${esc(a.note)}" placeholder="${p.note ? 'letztes Mal: ' + esc(p.note) : 'Notiz'}" autocomplete="off">`}</div>
+    <div class="dc-note">${dOpen ? '<span class="muted small">siehe unten</span>' : `<input class="field xs" data-note="${it.id}" value="${esc(a.note)}" placeholder="${s === 'b' ? 'Mangel beschreiben' : p.note ? 'letztes Mal: ' + esc(p.note) : 'Notiz'}" autocomplete="off">${s === 'b' ? `<button class="tb-btn sm dc-more" data-act="defectOpen" data-id="${it.id}" title="Vorschläge und Foto">📷${a.photos?.length ? ' ' + a.photos.length : ''} ▾</button>` : ''}`}</div>
     ${defect}
   </div>`;
 }

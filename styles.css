@@ -364,3 +364,5 @@ label.big-btn { display: flex; align-items: center; justify-content: center; tex
 .sugg-add.on { opacity: .7; }
 .tool.clr { color: var(--muted); border-color: var(--line); flex: .8; }
 .tool:disabled { opacity: .45; }
+.defect .dclose { display: block; margin: 0 0 6px auto; }
+.note-line { display: flex; flex-wrap: wrap; gap: 4px 18px; align-items: center; }
