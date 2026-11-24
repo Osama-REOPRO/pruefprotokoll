@@ -340,3 +340,5 @@ kbd { display: inline-block; min-width: 1.6em; padding: 1px 5px; border: 1px sol
   .big-btn:hover, .list-row:hover, .gate-row:hover, .more-btn:hover { filter: brightness(.97); }
   .seg2 button:not(.on):hover { border-color: var(--brand); }
 }
+
+.lang-btn { font-size: .78em; font-weight: 800; letter-spacing: .04em; }

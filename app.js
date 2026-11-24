@@ -3,6 +3,7 @@ import { TEMPLATE_TUER } from './template-tuer.js';
 import { db, uid, requestPersistence } from './db.js';
 import { printTore } from './print-tore.js';
 import { printTuer } from './print-tuer.js';
+import { LANG, setLang, startI18n } from './i18n.js';
 
 const TEMPLATES = { [TEMPLATE_TORE.id]: TEMPLATE_TORE, [TEMPLATE_TUER.id]: TEMPLATE_TUER };
 const BY_KIND = { tor: TEMPLATE_TORE, tuer: TEMPLATE_TUER };
@@ -188,6 +189,7 @@ async function renderHome() {
     <header class="bar">
       <div class="bar-title">Prüfprotokolle</div>
       <button class="icon-btn" data-act="size" aria-label="Schriftgröße">A<small>A</small></button>
+      <button class="icon-btn lang-btn" data-act="lang" aria-label="Sprache">${LANG === 'en' ? 'DE' : 'EN'}</button>
       <button class="icon-btn" data-act="theme" aria-label="Darstellung">${{ hell: '☀︎', sonne: '◐', dunkel: '☾' }[settings.get('theme', 'hell')]}</button>
     </header>
     <main class="home">
@@ -1175,6 +1177,7 @@ document.addEventListener('click', async (e) => {
     case 'editItem': await saveVisit(); return (location.hash = `#/p/${b.dataset.id}/0`);
     case 'menu': return openMenu(b.dataset.for, b.dataset.id);
     case 'keys': return openKeys();
+    case 'lang': setLang(LANG === 'en' ? 'de' : 'en'); return route();
     case 'menuGo': { closeJump(); return (location.hash = b.dataset.href); }
     case 'askDel': {
       if (b.dataset.quick) { const p = await deletePlan('inspection', b.dataset.id); await runDelete(p); return rerenderAfterDelete(p); }
@@ -1306,6 +1309,7 @@ document.addEventListener('keydown', (e) => {
 // ---------- Start ----------
 (async function start() {
   requestPersistence();
+  startI18n();
   if ('serviceWorker' in navigator && location.protocol !== 'file:') navigator.serviceWorker.register('./sw.js').catch(() => {});
   // Nach Unterbrechung direkt dort weitermachen, wo man war (innerhalb von 12 Stunden)
   const last = settings.get('last', null);
