@@ -25,6 +25,9 @@ const deskMQ = matchMedia('(min-width: 1000px) and (hover: hover) and (pointer: 
 let DESK = false;
 function applyDesk() { DESK = deskMQ.matches; document.documentElement.classList.toggle('desk', DESK); if (!DESK) document.getElementById('dknav').innerHTML = ''; }
 applyDesk();
+// Safari/WebKit druckt nur im bedruckbaren Bereich des Druckers (@page margin:0 wird ignoriert):
+// dort das Formular etwas kleiner setzen, damit es auf eine Seite passt
+if (/AppleWebKit/.test(navigator.userAgent) && !/Chrome\/|Chromium|Edg\/|Android/.test(navigator.userAgent)) document.documentElement.classList.add('webkit-print');
 deskMQ.addEventListener('change', () => { if (matchMedia('print').matches) return; applyDesk(); route(); }); // beim Drucken nicht umbauen
 
 // ---------- kleine Helfer ----------

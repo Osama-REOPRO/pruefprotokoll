@@ -98,6 +98,8 @@
   .print-scale { transform: none !important; height: auto !important; margin: 0 !important; width: auto !important; }
   .ppage { margin: 0; box-shadow: none; break-after: page; }
   .ppage:last-child { break-after: auto; }
+  html.webkit-print .ppage { zoom: .9; margin: 0 auto; break-inside: avoid; page-break-after: always; }
+  html.webkit-print .ppage:last-child { page-break-after: auto; }
   * { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
 }
 
