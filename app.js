@@ -1507,6 +1507,7 @@ document.addEventListener('click', async (e) => {
   if (e.target === sheet) return closeJump();
   const zimg = e.target.closest('.gdoc img[data-zoom]');
   if (zimg) return openZoom(zimg);
+  if (e.target.closest('.col-rs')) return; // Ziehgriff am Spaltenrand sortiert nicht
   const b = e.target.closest('[data-act]');
   if (!b) return;
   const act = b.dataset.act;
@@ -1865,6 +1866,7 @@ function renderHomeDesk({ open, done, single, resume }) {
 
 async function renderVisitDesk() {
   const v = ensurePairs(visit), all = await visitItems(v);
+  const colW = settings.get('colW', {}) || {};
   const multi = v.pairs.length > 1;
   const showAll = multi && v.filter === 'all';
   const items = showAll || !multi ? all : all.filter(i => pairOfItem(v, i).id === v.filter);
@@ -1908,8 +1910,8 @@ async function renderVisitDesk() {
         <span class="dk-sum-r">${progBar(done, items.length)} <b>${done} von ${items.length} fertig</b>${withDef ? ` · <b class="red">${withDef} mit Mängeln</b>` : ''}</span>
       </div>
       <section class="dk-panel">
-        ${items.length ? `<table class="dt">
-          <thead><tr>${[['nr0', '#', 'num'], ['kind', 'Tor / Tür'], ['standort', 'Standort / Lage'], ['nr', 'Nr.'], ['typ', 'Typ'], ['hersteller', 'Hersteller'], ['bj', 'Bj.', 'num'], ...(showAll ? [['pair', 'Kunde · Objekt']] : []), ['status', 'Status'], ['maengel', 'Mängel', 'num']].map(([k, t, c]) => { const s = getSort(); const on = s.k === k; return `<th class="sortable ${c || ''} ${on ? 'on' : ''}" data-act="sortBy" data-k="${k}" title="Nach ${t === '#' ? 'Reihenfolge' : t} sortieren" aria-sort="${on ? (s.d === 1 ? 'ascending' : 'descending') : 'none'}">${t}<span class="sort-ind">${on ? (s.d === 1 ? ' ▲' : ' ▼') : ''}</span></th>`; }).join('')}<th></th></tr></thead>
+        ${items.length ? `<table class="dt dt-items ${Object.keys(colW).length ? 'fixed' : ''}" ${Object.keys(colW).length ? `style="width:${Object.values(colW).reduce((a, b) => a + b, 0)}px"` : ''}>
+          <thead><tr>${[['nr0', '#', 'num'], ['kind', 'Tor / Tür'], ['standort', 'Standort / Lage'], ['nr', 'Nr.'], ['typ', 'Typ'], ['hersteller', 'Hersteller'], ['bj', 'Bj.', 'num'], ...(showAll ? [['pair', 'Kunde · Objekt']] : []), ['status', 'Status'], ['maengel', 'Mängel', 'num']].map(([k, t, c]) => { const s = getSort(); const on = s.k === k; return `<th class="sortable ${c || ''} ${on ? 'on' : ''}" data-act="sortBy" data-k="${k}" ${colW[k] ? `style="width:${colW[k]}px"` : ''} title="Nach ${t === '#' ? 'Reihenfolge' : t} sortieren" aria-sort="${on ? (s.d === 1 ? 'ascending' : 'descending') : 'none'}">${t}<span class="sort-ind">${on ? (s.d === 1 ? ' ▲' : ' ▼') : ''}</span><span class="col-rs" data-col="${k}" title="Ziehen: Breite ändern · Doppelklick: alle Breiten zurücksetzen"></span></th>`; }).join('')}<th data-k="acts" ${colW.acts ? `style="width:${colW.acts}px"` : ''}></th></tr></thead>
           <tbody>${showAll
             ? v.pairs.map(p => { const its = all.filter(i => pairOfItem(v, i).id === p.id); return `<tr class="dt-group"><td colspan="11"><button class="link" data-act="filterPair" data-id="${p.id}">${esc(pairLabel(p))} ›</button> <span class="muted">${its.length}</span></td></tr>${sortItems(its, v).map(([i, n]) => tr(i, n)).join('')}`; }).join('')
             : sortItems(items, v).map(([i, n]) => tr(i, n)).join('')}</tbody></table>`
@@ -2014,3 +2016,28 @@ if ('launchQueue' in window) {
     location.hash = `#/p/${last.id}/${last.step}`;
   } else route();
 })();
+
+// ---------- Spaltenbreiten der Tor-/Türliste (Desktop): am rechten Rand des Spaltenkopfs ziehen ----------
+document.addEventListener('pointerdown', (e) => {
+  const h = e.target.closest('.dt-items .col-rs');
+  if (!h) return;
+  e.preventDefault();
+  const table = h.closest('table'), th = h.closest('th');
+  const ths = [...table.querySelectorAll('thead th')];
+  // Beim ersten Ziehen die jetzigen Breiten festhalten, damit sich nur die gezogene Spalte ändert
+  if (!table.classList.contains('fixed')) { ths.forEach(t => { t.style.width = t.getBoundingClientRect().width + 'px'; }); table.style.width = table.getBoundingClientRect().width + 'px'; table.classList.add('fixed'); }
+  const x0 = e.clientX, w0 = th.getBoundingClientRect().width, t0 = table.getBoundingClientRect().width;
+  document.body.classList.add('col-resizing');
+  const move = (ev) => { const w = Math.max(32, Math.round(w0 + ev.clientX - x0)); th.style.width = w + 'px'; table.style.width = (t0 - w0 + w) + 'px'; };
+  const up = () => {
+    document.removeEventListener('pointermove', move); document.removeEventListener('pointerup', up);
+    document.body.classList.remove('col-resizing');
+    const w = {}; ths.forEach(t => { if (t.dataset.k) w[t.dataset.k] = Math.round(t.getBoundingClientRect().width); });
+    settings.set('colW', w);
+  };
+  document.addEventListener('pointermove', move); document.addEventListener('pointerup', up);
+});
+document.addEventListener('dblclick', (e) => {
+  if (!e.target.closest('.dt-items .col-rs')) return;
+  settings.set('colW', {}); renderVisit();
+});

@@ -264,3 +264,11 @@ html.desk .dt th.sortable { cursor: pointer; user-select: none; }
 html.desk .dt th.sortable:hover { color: var(--ink); }
 html.desk .dt th.sortable.on { color: var(--brand); }
 html.desk .dt th .sort-ind { font-size: .85em; }
+html.desk .dt-items th { position: relative; }
+html.desk .dt-items.fixed { table-layout: fixed; }
+html.desk .dt-items.fixed td { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+html.desk .col-rs { position: absolute; top: 0; right: -4px; width: 9px; height: 100%; cursor: col-resize; z-index: 2; }
+html.desk .col-rs::after { content: ''; position: absolute; left: 4px; top: 25%; height: 50%; width: 1px; background: var(--line); }
+html.desk .col-rs:hover::after, body.col-resizing .col-rs::after { background: var(--brand); width: 2px; }
+body.col-resizing, body.col-resizing * { cursor: col-resize !important; user-select: none; }
+html.desk .dk-panel:has(.dt-items.fixed) { overflow-x: auto; }
