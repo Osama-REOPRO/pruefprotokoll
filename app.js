@@ -1802,7 +1802,13 @@ if ('launchQueue' in window) {
 (async function start() {
   requestPersistence();
   startI18n();
-  if ('serviceWorker' in navigator && location.protocol !== 'file:') navigator.serviceWorker.register('./sw.js').catch(() => {});
+  if ('serviceWorker' in navigator && location.protocol !== 'file:') {
+    // Neue Version sofort übernehmen: nach Wechsel des Service Workers einmal neu laden
+    const hadController = !!navigator.serviceWorker.controller;
+    let reloaded = false;
+    navigator.serviceWorker.addEventListener('controllerchange', () => { if (hadController && !reloaded) { reloaded = true; location.reload(); } });
+    navigator.serviceWorker.register('./sw.js', { updateViaCache: 'none' }).then(r => r.update()).catch(() => {});
+  }
   // Nach Unterbrechung direkt dort weitermachen, wo man war (innerhalb von 12 Stunden)
   const last = settings.get('last', null);
   if ((!location.hash || location.hash === '#/') && last && Date.now() - last.at < 12 * 3600e3) {
