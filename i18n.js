@@ -12,6 +12,11 @@ const EN = {
   'Alles wird nur auf diesem Handy gespeichert und funktioniert auch ohne Netz.': 'Everything is stored only on this phone and works offline.',
   'Schriftgröße': 'Text size', 'Darstellung': 'Appearance', 'Sprache': 'Language', 'Übersicht': 'Overview', 'Zur Übersicht': 'To overview',
   'Zum Termin': 'To appointment', 'Mehr': 'More', 'Abbrechen': 'Cancel', 'Schließen': 'Close', 'Löschen': 'Delete', 'Entfernen': 'Remove',
+  'Feldhandbuch': 'Field guide', 'Handbuch': 'Guide', 'Kapitel': 'Chapters', 'Abschnitte': 'Sections',
+  'Im Handbuch suchen (z. B. Feder, SKS, Luftspalt)': 'Search the guide (e.g. Feder, SKS, Luftspalt)',
+  'Im Handbuch nachlesen': 'Read in the field guide', 'Nichts gefunden.': 'Nothing found.', 'Bild schließen': 'Close image',
+  'Handbuch schließen': 'Close guide', 'Inhalt': 'Contents', 'Feldhandbuch Tore & Türen': 'Field guide gates & doors',
+  'Antippen zum Vergrößern': 'Tap to enlarge', 'Handbuch öffnen': 'Open field guide',
   'Zurück': 'Back', 'Weiter': 'Next', 'Fertig': 'Done', 'Nächstes': 'Next', 'Zur Prüfung': 'Start inspection', 'Abschließen': 'Finish',
   'gespeichert': 'saved', 'Rückgängig': 'Undo', 'Gelöscht.': 'Deleted.', 'Nichts gefunden.': 'Nothing found.',
   'Was wird geprüft?': 'What is being inspected?', 'Prüfprotokoll kraftbetätigte Tore (ASR A1.7, DIN 14677)': 'Inspection report for power-operated gates (ASR A1.7, DIN 14677)',
@@ -200,9 +205,9 @@ const ATTRS = ['placeholder', 'aria-label', 'title'];
 function translateNode(root) {
   if (LANG !== 'en' || !root) return;
   if (root.nodeType === 3) { fixText(root); return; }
-  if (root.nodeType !== 1 || root.closest?.('.ppage')) return;
+  if (root.nodeType !== 1 || root.closest?.('.ppage, .notr')) return;
   const w = document.createTreeWalker(root, NodeFilter.SHOW_TEXT | NodeFilter.SHOW_ELEMENT, {
-    acceptNode: (n) => n.nodeType === 1 && n.classList.contains('ppage') ? NodeFilter.FILTER_REJECT : NodeFilter.FILTER_ACCEPT,
+    acceptNode: (n) => n.nodeType === 1 && (n.classList.contains('ppage') || n.classList.contains('notr')) ? NodeFilter.FILTER_REJECT : NodeFilter.FILTER_ACCEPT,
   });
   let n = root;
   do {
@@ -211,7 +216,7 @@ function translateNode(root) {
   } while ((n = w.nextNode()));
 }
 function fixText(node) {
-  if (node.parentElement?.closest('.ppage, script, style')) return;
+  if (node.parentElement?.closest('.ppage, .notr, script, style')) return;
   const v = node.nodeValue, t = v.trim();
   if (!t) return;
   const out = tr(t);

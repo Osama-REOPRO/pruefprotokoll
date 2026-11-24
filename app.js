@@ -4,6 +4,7 @@ import { db, uid, requestPersistence } from './db.js';
 import { printTore } from './print-tore.js';
 import { printTuer } from './print-tuer.js';
 import { LANG, setLang, startI18n } from './i18n.js';
+import { renderGuide, guideHref, openGuideToc, openZoom, closeZoom } from './guide-view.js';
 
 const TEMPLATES = { [TEMPLATE_TORE.id]: TEMPLATE_TORE, [TEMPLATE_TUER.id]: TEMPLATE_TUER };
 const BY_KIND = { tor: TEMPLATE_TORE, tuer: TEMPLATE_TUER };
@@ -121,9 +122,18 @@ function renderStepKeepScroll() { const y = window.scrollY; renderStep(); window
 
 // ---------- Routing ----------
 let lastHash = '';
+// Handbuch: merken, woher man kam, damit ✕ genau dorthin (und an dieselbe Stelle) zurückführt
+let guideReturn = null, pendingY = null;
+const isGuide = (h) => /^#\/handbuch/.test(h || '');
 async function route() {
+  if (isGuide(location.hash) && !isGuide(lastHash)) guideReturn = { hash: lastHash || '#/', y: window.scrollY };
+  await routeInner();
+  if (pendingY != null) { const y = pendingY; pendingY = null; requestAnimationFrame(() => window.scrollTo(0, y)); }
+}
+async function routeInner() {
   if (location.hash !== lastHash) { lastHash = location.hash; window.scrollTo(0, 0); }
   closeJump();
+  closeZoom();
   document.getElementById('snack').classList.remove('show');
   const h = location.hash.replace(/^#\/?/, '');
   const parts = h.split('/');
@@ -137,6 +147,11 @@ async function route() {
     const v = ensurePairs(await db.get('visits', parts[1]));
     const ids = (await visitItems(v)).filter(i => !parts[2] || pairOfItem(v, i).id === parts[2]).map(i => i.id);
     return renderPrint(ids, `#/t/${v.id}`);
+  }
+  if (parts[0] === 'handbuch') {
+    if (insp) await saveNow();
+    releaseAwake();
+    return renderGuide($app, parts[1], parts[2]);
   }
   if (parts[0] === 't' && parts[1]) {
     if (insp) await saveNow();
@@ -191,6 +206,7 @@ async function renderHome() {
   $app.innerHTML = `
     <header class="bar">
       <div class="bar-title">Prüfprotokolle</div>
+      <a class="icon-btn as-a" href="#/handbuch" aria-label="Handbuch öffnen" title="Feldhandbuch">📖</a>
       <button class="icon-btn" data-act="size" aria-label="Schriftgröße">A<small>A</small></button>
       <button class="icon-btn lang-btn" data-act="lang" aria-label="Sprache">${LANG === 'en' ? 'DE' : 'EN'}</button>
       <button class="icon-btn" data-act="theme" aria-label="Darstellung">${{ hell: '☀︎', sonne: '◐', dunkel: '☾' }[settings.get('theme', 'hell')]}</button>
@@ -471,7 +487,7 @@ function rowHTML(it) {
     : `<button class="note-btn" data-act="noteOpen" data-id="${it.id}">✎ Notiz${p.note ? ` <span class="muted">(letztes Mal: ${esc(p.note)})</span>` : ''}</button>`;
   const ghost = (v) => !s && p.s === v ? 'ghost' : '';
   return `<div class="row ${s || ''} ${!s && p.s ? 'has-prev' : ''} ${p.s === 'b' ? 'was-b' : ''}" id="r-${it.id}">
-    <div class="row-lbl">${esc(it.label)}</div>
+    <div class="row-lbl">${esc(it.label)}${guideLink(it)}</div>
     ${prevDefect}
     ${extra}
     <div class="seg2 n${(tpl.states || ['ok', 'b']).length}" role="group">
@@ -483,6 +499,14 @@ function rowHTML(it) {
   </div>`;
 }
 const openNotes = new Set();
+// Kleiner Buch-Link neben der Zeile: springt zum passenden Abschnitt im Feldhandbuch
+function guideLink(it) {
+  const sec = tpl.sections.find(s => s.items.includes(it));
+  if (!sec) return '';
+  const before = sec.items.slice(0, sec.items.indexOf(it)).reverse().find(x => x.heading);
+  const href = guideHref(tpl.kind, sec.title, (before ? before.heading + ' ' : '') + it.label);
+  return href ? ` <a class="guide-link" href="${href}" aria-label="Im Handbuch nachlesen" title="Im Handbuch nachlesen">📖</a>` : '';
+}
 
 function renderSection(sec) {
   const untouched = sec.items.filter(isCheck).filter(it => !insp.answers[it.id]?.s);
@@ -1287,6 +1311,8 @@ function closeJump() { document.getElementById('sheet').classList.remove('show')
 document.addEventListener('click', async (e) => {
   const sheet = document.getElementById('sheet');
   if (e.target === sheet) return closeJump();
+  const zimg = e.target.closest('.gdoc img[data-zoom]');
+  if (zimg) return openZoom(zimg);
   const b = e.target.closest('[data-act]');
   if (!b) return;
   const act = b.dataset.act;
@@ -1366,6 +1392,9 @@ document.addEventListener('click', async (e) => {
     case 'editItem': await saveVisit(); return (location.hash = `#/p/${b.dataset.id}/0`);
     case 'menu': return openMenu(b.dataset.for, b.dataset.id);
     case 'keys': return openKeys();
+    case 'guideClose': { const r = guideReturn; guideReturn = null; if (r && !isGuide(r.hash)) { pendingY = r.y; return (location.hash = r.hash || '#/'); } return (location.hash = '#/'); }
+    case 'guideToc': return openGuideToc(sheet);
+    case 'zoomClose': return closeZoom();
     case 'lang': setLang(LANG === 'en' ? 'de' : 'en'); return route();
     case 'menuGo': { closeJump(); return (location.hash = b.dataset.href); }
     case 'askDel': {
@@ -1438,7 +1467,7 @@ const KEYS = [
   ['↓ / J', 'nächste Zeile'], ['↑ / K', 'vorige Zeile'], ['N', 'Notiz zur Zeile'],
   ['→', 'nächster Abschnitt'], ['←', 'voriger Abschnitt'],
   ['A', 'Rest o.B.'], ['L', 'Wie letztes Mal'], ['P', 'Drucken / PDF'],
-  ['Esc', 'Feld verlassen / Fenster schließen'], ['?', 'diese Hilfe'],
+  ['H', 'Feldhandbuch'], ['Esc', 'Feld verlassen / Fenster schließen'], ['?', 'diese Hilfe'],
 ];
 function openKeys() {
   const sheet = document.getElementById('sheet');
@@ -1467,13 +1496,16 @@ document.addEventListener('keydown', (e) => {
   const typing = t.tagName === 'INPUT' || t.tagName === 'TEXTAREA' || t.isContentEditable;
   const sheetOpen = document.getElementById('sheet').classList.contains('show');
   if (e.key === 'Escape') {
+    if (closeZoom()) { e.preventDefault(); return; }
     if (sheetOpen) { e.preventDefault(); return closeJump(); }
+    if (!typing && isGuide(location.hash)) { e.preventDefault(); return document.querySelector('[data-act=guideClose]')?.click(); }
     if (typing) { e.preventDefault(); const row = t.closest('.row'); t.blur(); if (row) kbSelect(kbRows().indexOf(row), false); }
     return;
   }
   if (typing || sheetOpen) return;
   const k = e.key.length === 1 ? e.key.toLowerCase() : e.key;
   if (k === '?') { e.preventDefault(); return openKeys(); }
+  if (k === 'h' && !isGuide(location.hash)) { e.preventDefault(); return (location.hash = '#/handbuch'); }
   if (!insp || !tpl) return;
   const inSection = step > 0 && step < stepCount() - 1;
   const click = (sel) => { const el = document.querySelector(sel); if (el && !el.disabled) { el.click(); return true; } return false; };
