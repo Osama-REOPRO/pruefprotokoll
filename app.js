@@ -134,8 +134,8 @@ async function route() {
       const r = await db.get('inspections', parts[1]);
       return renderPrint([parts[1]], `#/p/${parts[1]}/${(TEMPLATES[r?.templateId]?.sections.length ?? 0) + 1}`);
     }
-    const v = await db.get('visits', parts[1]);
-    const ids = (await visitItems(v)).map(i => i.id);
+    const v = ensurePairs(await db.get('visits', parts[1]));
+    const ids = (await visitItems(v)).filter(i => !parts[2] || pairOfItem(v, i).id === parts[2]).map(i => i.id);
     return renderPrint(ids, `#/t/${v.id}`);
   }
   if (parts[0] === 't' && parts[1]) {
@@ -145,6 +145,9 @@ async function route() {
     settings.set('last', null);
     visit = await db.get('visits', parts[1]);
     if (!visit) { location.hash = '#/'; return; }
+    const migrate = !Array.isArray(visit.pairs);
+    ensurePairs(visit);
+    if (migrate) await saveVisit();
     return parts[2] === 'edit' ? renderVisitEdit() : renderVisit();
   }
   if (parts[0] === 'p' && parts[1]) {
@@ -215,11 +218,30 @@ function visitRow({ v, items }) {
   const today = dateKey(v.datum) === dateKey(todayDE());
   return `<div class="row-wrap"><button class="list-row" data-act="openVisit" data-id="${v.id}">
     <span><strong>${esc(visitTitle(v))}</strong><br>
-      <span class="muted small">${today ? '<b class="today">Heute</b> · ' : esc(v.datum || '') + ' · '}${esc(v.kunde?.name || '')}</span><br>
+      <span class="muted small">${today ? '<b class="today">Heute</b> · ' : esc(v.datum || '') + ' · '}${esc(visitKunden(v))}</span><br>
       <span class="muted small">${items.length ? `${done} von ${items.length} fertig` : 'noch keine Tore'}${defects ? ` · <b class="red">${defects} mit Mängeln</b>` : ''}</span></span>
     <span class="chev">›</span></button><button class="more-btn" data-act="menu" data-for="visit" data-id="${v.id}" aria-label="Mehr">⋯</button></div>`;
 }
-const visitTitle = (v) => [v.objekt?.name, v.objekt?.strasse].filter(Boolean).join(', ') || v.kunde?.name || 'Neuer Termin';
+// Ein Termin hat eine Liste von Paaren aus Kunde + Objekt. Jede Tür / jedes Tor gehört zu genau einem Paar.
+// Alte Termine (ein Kunde, ein Objekt) werden beim Laden in ein Paar umgewandelt, ohne Daten zu verlieren.
+const pairsOf = (v) => (Array.isArray(v?.pairs) && v.pairs.length) ? v.pairs : [{ kunde: v?.kunde || {}, objekt: v?.objekt || {} }];
+const uniq = (a) => [...new Set(a.filter(Boolean))];
+const short = (list) => list.length > 2 ? `${list.slice(0, 2).join(', ')} +${list.length - 2}` : list.join(', ');
+const visitTitle = (v) => short(uniq(pairsOf(v).map(p => [p.objekt?.name, p.objekt?.strasse].filter(Boolean).join(', ')))) || short(uniq(pairsOf(v).map(p => p.kunde?.name))) || 'Neuer Termin';
+const visitKunden = (v) => short(uniq(pairsOf(v).map(p => p.kunde?.name)));
+function ensurePairs(v) {
+  if (!v) return v;
+  if (!Array.isArray(v.pairs) || !v.pairs.length) {
+    v.pairs = [{ id: uid(), customerId: v.customerId || uid(), siteId: v.siteId || uid(), kunde: v.kunde || {}, objekt: v.objekt || {} }];
+  }
+  if (!v.pairs.some(p => p.id === v.editPair)) v.editPair = v.pairs[0].id;
+  if (v.filter !== 'all' && !v.pairs.some(p => p.id === v.filter)) v.filter = v.pairs.length > 1 ? 'all' : v.pairs[0].id;
+  return v;
+}
+const pairById = (v, id) => v.pairs.find(p => p.id === id);
+const editPair = (v) => pairById(v, v.editPair) || v.pairs[0];
+const pairOfItem = (v, i) => pairById(v, i.pairId) || v.pairs.find(p => p.siteId === i.siteId && p.customerId === i.customerId) || v.pairs[0];
+const pairLabel = (p) => [p.kunde?.name, p.objekt?.name || p.objekt?.strasse].filter(Boolean).join(' · ') || 'Neues Paar';
 
 function inspTitle(i) {
   const o = i.header?.objekt || {}, k = i.header?.kunde || {};
@@ -274,7 +296,7 @@ async function newInspection(prefill = {}, { open = true, step: startStep = 0 } 
     id: uid(), templateId: tplNew.id, templateVersion: tplNew.version, status: 'draft',
     header: { ...Object.fromEntries(tplNew.header.map(g => [g.id, {}])), ...structuredClone(prefill.header || {}) },
     customerId: prefill.customerId || null, siteId: prefill.siteId || null, gateId: prefill.gateId || null,
-    visitId: prefill.visitId || null, order: prefill.order ?? Date.now(),
+    visitId: prefill.visitId || null, pairId: prefill.pairId || null, order: prefill.order ?? Date.now(),
     prev, prevDatum: prefill.prevDatum || null, prevRemarks: prefill.prevRemarks || '',
     answers, remarks: '', angebot: false, ort: '', datum: todayDE(),
     sig: { ag: { name: prefill.agName || '', img: null, absent: false }, an: { name: settings.get('techName', ''), img: null } },
@@ -386,7 +408,7 @@ function renderHeader() {
           <button class="big-btn primary" data-act="copyAll">↺ Alles wie letztes Mal</button>
         </section>
         <p class="hint">Oder Daten unten prüfen und dann Abschnitt für Abschnitt bestätigen.</p>` : (insp.gateId ? '<p class="hint">Daten vom letzten Mal übernommen. Nur prüfen, was sich geändert hat.</p>' : '')}
-      ${insp.visitId ? `<p class="hint">Kunde und Objekt kommen vom Termin: <b>${esc(visitTitle({ objekt: insp.header.objekt, kunde: insp.header.kunde }))}</b></p>` : ''}
+      ${insp.visitId ? `<button class="hint pair-line" data-act="movePairAsk" data-id="${insp.id}"><span>Kunde und Objekt kommen vom Termin:</span> <b>${esc(pairLabel({ objekt: insp.header.objekt, kunde: insp.header.kunde }))}</b> <span class="link-ish">ändern ›</span></button>` : ''}
       ${groups}
     </main>
     ${bottomBar('Zur Prüfung ›', 'ready')}`;
@@ -738,7 +760,7 @@ function itemState(i) {
   return ['offen', 'offen'];
 }
 async function newVisit() {
-  const v = { id: uid(), datum: todayDE(), kunde: {}, objekt: {}, customerId: uid(), siteId: uid(), agName: '' };
+  const v = ensurePairs({ id: uid(), datum: todayDE(), agName: '', pairs: [{ id: uid(), customerId: uid(), siteId: uid(), kunde: {}, objekt: {} }] });
   await db.put('visits', v);
   location.hash = `#/t/${v.id}/edit`;
 }
@@ -766,7 +788,7 @@ async function duplicateItem(id) {
   }
   const rec = await newInspection({
     templateId: src.templateId, header, customerId: src.customerId, siteId: src.siteId, gateId: null,
-    visitId: src.visitId, order: (src.order ?? 0) + 0.5, agName: src.sig?.ag?.name || '',
+    visitId: src.visitId, pairId: src.pairId, order: (src.order ?? 0) + 0.5, agName: src.sig?.ag?.name || '',
   }, { open: false });
   Object.assign(rec, { answers, angebot: !!src.angebot, ort: src.ort || '', copiedFrom: src.id, maxStep: t.sections.length });
   await db.put('inspections', rec);
@@ -782,7 +804,8 @@ async function duplicateItem(id) {
 let pendingDelete = null;
 async function deletePlan(kind, id) {
   const [customers, sites, gates, visits, inspections] = await Promise.all(['customers', 'sites', 'gates', 'visits', 'inspections'].map(x => db.all(x)));
-  const p = { kind, id, customers: [], sites: [], gates: [], visits: [], inspections: [] };
+  const p = { kind, id, customers: [], sites: [], gates: [], visits: [], inspections: [], pairRemovals: [] };
+  visits.forEach(ensurePairs);
   if (kind === 'customer') {
     p.customers = [id];
     p.sites = sites.filter(x => x.customerId === id).map(x => x.id);
@@ -791,13 +814,28 @@ async function deletePlan(kind, id) {
   if (kind === 'customer' || kind === 'site') {
     const S = new Set(p.sites);
     p.gates = gates.filter(g => S.has(g.siteId) || (kind === 'customer' && g.customerId === id)).map(g => g.id);
-    p.visits = visits.filter(v => S.has(v.siteId) || (kind === 'customer' && v.customerId === id)).map(v => v.id);
+    // Termine mit mehreren Paaren: nur die betroffenen Paare entfernen, den Termin behalten
+    for (const v of visits) {
+      const hit = v.pairs.filter(pr => S.has(pr.siteId) || (kind === 'customer' && pr.customerId === id));
+      if (!hit.length) continue;
+      if (hit.length === v.pairs.length) p.visits.push(v.id);
+      else p.pairRemovals.push({ visitId: v.id, pairIds: hit.map(x => x.id) });
+    }
+  }
+  if (kind === 'pair') {
+    const [vid, pid] = id.split(':');
+    const v = visits.find(x => x.id === vid);
+    if (v && v.pairs.length <= 1) p.visits.push(vid); else p.pairRemovals.push({ visitId: vid, pairIds: [pid] });
+    p.inspections = inspections.filter(i => i.visitId === vid && v && pairOfItem(v, i).id === pid).map(i => i.id);
+    p.name = v ? pairLabel(pairById(v, pid) || {}) : '';
   }
   if (kind === 'visit') p.visits = [id];
   if (kind === 'gate') p.gates = [id];
   if (kind === 'inspection') p.inspections = [id];
   const V = new Set(p.visits), S = new Set(p.sites);
-  if (kind !== 'gate' && kind !== 'inspection') p.inspections = inspections.filter(i => V.has(i.visitId) || S.has(i.siteId) || (kind === 'customer' && i.customerId === id)).map(i => i.id);
+  if (kind !== 'gate' && kind !== 'inspection' && kind !== 'pair') p.inspections = inspections.filter(i => V.has(i.visitId) || S.has(i.siteId) || (kind === 'customer' && i.customerId === id)
+    || p.pairRemovals.some(pr => pr.visitId === i.visitId && pr.pairIds.includes(pairOfItem(visits.find(x => x.id === i.visitId), i).id))).map(i => i.id);
+  if (kind === 'pair') return p;
   p.name = kind === 'customer' ? customers.find(x => x.id === id)?.name
     : kind === 'site' ? [sites.find(x => x.id === id)?.name, sites.find(x => x.id === id)?.strasse].filter(Boolean).join(', ')
     : kind === 'visit' ? visitTitle(visits.find(x => x.id === id) || {})
@@ -813,6 +851,15 @@ async function runDelete(p) {
   for (const ph of photos) await db.del('photos', ph.id);
   for (const id of p.inspections) await db.del('inspections', id);
   for (const store of ['visits', 'gates', 'sites', 'customers']) for (const id of p[store]) await db.del(store, id);
+  for (const pr of p.pairRemovals || []) {
+    const v = await db.get('visits', pr.visitId); if (!v) continue;
+    ensurePairs(v); v.pairs = v.pairs.filter(x => !pr.pairIds.includes(x.id));
+    if (!v.pairs.length) { await db.del('visits', v.id); continue; }
+    delete v.editPair; if (v.filter !== 'all') delete v.filter; ensurePairs(v);
+    Object.assign(v, { customerId: v.pairs[0].customerId, siteId: v.pairs[0].siteId, kunde: v.pairs[0].kunde, objekt: v.pairs[0].objekt });
+    await db.put('visits', v);
+    if (visit?.id === v.id) visit = v;
+  }
   if (visit && p.visits.includes(visit.id)) visit = null;
 }
 function rerenderAfterDelete(p) {
@@ -826,11 +873,12 @@ function rerenderAfterDelete(p) {
 async function askDelete(kind, id) {
   const p = await deletePlan(kind, id);
   pendingDelete = p;
-  const noun = { customer: 'Kunde', site: 'Objekt', visit: 'Termin', gate: 'Tür / Tor', inspection: 'Protokoll' }[kind];
+  const noun = { customer: 'Kunde', site: 'Objekt', visit: 'Termin', gate: 'Tür / Tor', inspection: 'Protokoll', pair: 'Paar' }[kind];
   const n = (k, one, many) => p[k].length ? `${p[k].length} ${p[k].length === 1 ? one : many}` : '';
   const also = [n('sites', 'Objekt', 'Objekte'), n('gates', 'Tür / Tor', 'Türen und Tore'), n('visits', 'Termin', 'Termine'), n('inspections', 'Protokoll', 'Protokolle')]
     .filter((x, i) => x && !(kind === 'site' && i === 0)).filter(x => !(kind === 'gate') && !(kind === 'inspection'));
-  const note = kind === 'gate' ? 'Sie wird nicht mehr vorgeschlagen. Frühere Protokolle in alten Terminen bleiben erhalten.'
+  const note = kind === 'pair' ? (p.inspections.length ? `Dabei wird auch gelöscht: ${n('inspections', 'Protokoll', 'Protokolle')}. Kunde und Objekt bleiben gespeichert.` : 'Kunde und Objekt bleiben gespeichert.')
+    : kind === 'gate' ? 'Sie wird nicht mehr vorgeschlagen. Frühere Protokolle in alten Terminen bleiben erhalten.'
     : also.length ? `Dabei wird auch gelöscht: ${also.join(', ')}.` : '';
   const sheet = document.getElementById('sheet');
   sheet.innerHTML = `<div class="sheet-inner">
@@ -852,13 +900,16 @@ async function openMenu(forWhat, id) {
   const btn = (act, kid, label) => `<button class="big-btn" data-act="${act}" data-id="${kid}">${label}</button>`;
   let title = '', rows = [];
   if (forWhat === 'visit' || forWhat === 'kunde' || forWhat === 'objekt') {
-    const v = await db.get('visits', id); if (!v) return;
-    const kName = v.kunde?.name || 'Kunde', oName = [v.objekt?.name, v.objekt?.strasse].filter(Boolean).join(', ') || 'Objekt';
+    const v = ensurePairs(await db.get('visits', id)); if (!v) return;
+    const P = forWhat === 'visit' && v.pairs.length > 1 ? null : editPair(v);
+    const kName = P?.kunde?.name || 'Kunde', oName = [P?.objekt?.name, P?.objekt?.strasse].filter(Boolean).join(', ') || 'Objekt';
+    const removePair = v.pairs.length > 1 && P ? [del('pair', `${v.id}:${P.id}`, `Paar aus Termin entfernen: ${pairLabel(P)}`)] : [];
     if (forWhat === 'visit') {
       title = visitTitle(v);
-      rows = [go(`#/t/${v.id}/edit`, '✎ Termin bearbeiten'), go(`#/druck-t/${v.id}`, '🖨 Alle Protokolle drucken'), del('visit', v.id, 'Termin löschen'), del('site', v.siteId, `Objekt löschen: ${oName}`), del('customer', v.customerId, `Kunde löschen: ${kName}`)];
-    } else if (forWhat === 'kunde') { title = kName; rows = [del('customer', v.customerId, 'Kunde löschen')]; }
-    else { title = oName; rows = [del('site', v.siteId, 'Objekt löschen')]; }
+      rows = [go(`#/t/${v.id}/edit`, '✎ Termin bearbeiten'), btn('addPair', v.id, '＋ Paar (weiterer Kunde / weiteres Objekt)'), go(`#/druck-t/${v.id}`, '🖨 Alle Protokolle drucken'), del('visit', v.id, 'Termin löschen'),
+        ...(P ? [del('site', P.siteId, `Objekt löschen: ${oName}`), del('customer', P.customerId, `Kunde löschen: ${kName}`)] : [])];
+    } else if (forWhat === 'kunde') { title = kName; rows = [...removePair, del('customer', P.customerId, 'Kunde löschen')]; }
+    else { title = oName; rows = [...removePair, del('site', P.siteId, 'Objekt löschen')]; }
   } else if (forWhat === 'site') {
     const st = await db.get('sites', id); if (!st) return;
     const c = st.customerId && await db.get('customers', st.customerId);
@@ -876,6 +927,7 @@ async function openMenu(forWhat, id) {
     rows = [
       ...(forWhat === 'item' ? [go(`#/p/${i.id}/0`, '✎ Daten bearbeiten')] : [go(`#/p/${i.id}/0`, '✎ Stammdaten')]),
       btn('duplicate', i.id, `⧉ Kopie anlegen (gleiche Häkchen)`),
+      ...(i.visitId ? [btn('movePairAsk', i.id, '⇄ Kunde / Objekt ändern')] : []),
       go(`#/druck/${i.id}`, '🖨 Drucken / PDF'),
       del('inspection', i.id, i.visitId ? `${u.noun} aus diesem Termin löschen` : 'Protokoll löschen'),
       ...(gate ? [del('gate', gate.id, `${u.noun} nicht mehr vorschlagen`)] : []),
@@ -891,32 +943,56 @@ async function openMenu(forWhat, id) {
   sheet.classList.add('show');
 }
 
-// Vor Ort: Liste der Tore, Antippen führt direkt zur Checkliste
+// Vor Ort: Liste der Tore, Antippen führt direkt zur Checkliste.
+// Mehrere Paare (Kunde + Objekt): oben Chips zum Filtern, "Alle" zeigt alles nach Paar gruppiert.
+function pairChips(v, items, { edit = false } = {}) {
+  const multi = v.pairs.length > 1;
+  if (!multi && !edit) return '';
+  const cnt = (p) => items.filter(i => pairOfItem(v, i).id === p.id).length;
+  const cur = edit ? v.editPair : v.filter;
+  return `<div class="pair-chips" role="tablist">
+    ${!edit ? `<button class="pchip ${cur === 'all' ? 'on' : ''}" data-act="filterPair" data-id="all">Alle <span class="n">${items.length}</span></button>` : ''}
+    ${v.pairs.map(p => `<button class="pchip ${cur === p.id ? 'on' : ''}" data-act="${edit ? 'editPairSel' : 'filterPair'}" data-id="${p.id}">${esc(pairLabel(p))} <span class="n">${cnt(p)}</span></button>`).join('')}
+    <button class="pchip add" data-act="addPair">＋ Paar</button>
+  </div>`;
+}
+function itemRow(i) {
+  const [cls, label] = itemState(i);
+  const t = unitOf(i);
+  return `<div class="gate-line"><button class="gate-row st-${cls}" data-act="openItem" data-id="${i.id}">
+    <span class="gate-ico">${{ fertig: '✓', maengel: '✗', arbeit: '…', offen: '' }[cls]}</span>
+    <span class="gate-txt"><b>${esc(t.standort || `${t.noun} ohne Standort`)}</b><br><span class="muted small"><span class="kind">${esc(t.noun)}</span> ${esc(unitSub(t))}</span></span>
+    <span class="pill ${cls === 'maengel' ? 'red' : cls === 'fertig' ? 'green' : ''}">${label}</span></button>
+    <button class="dup-btn" data-act="menu" data-for="item" data-id="${i.id}" aria-label="Mehr zu ${esc(t.noun)}">⋯</button></div>`;
+}
 async function renderVisit() {
-  const v = visit, items = await visitItems(v);
+  const v = ensurePairs(visit), all = await visitItems(v);
+  const multi = v.pairs.length > 1;
+  const showAll = multi && v.filter === 'all';
+  const items = showAll || !multi ? all : all.filter(i => pairOfItem(v, i).id === v.filter);
   const done = items.filter(i => i.status === 'done').length;
+  const one = !multi ? v.pairs[0] : (showAll ? null : pairById(v, v.filter));
+  const list = !items.length ? '<p class="empty">Noch keine Tore oder Türen in diesem Termin.</p>'
+    : showAll ? v.pairs.map(p => {
+        const its = all.filter(i => pairOfItem(v, i).id === p.id);
+        return `<h3 class="pair-h"><button class="link" data-act="filterPair" data-id="${p.id}">${esc(pairLabel(p))} ›</button></h3>${its.map(itemRow).join('') || '<p class="muted small pair-empty">Noch keine Tore oder Türen.</p>'}`;
+      }).join('')
+    : items.map(itemRow).join('');
   $app.innerHTML = `
     <header class="bar">
       <button class="icon-btn" data-act="toHome" aria-label="Übersicht">‹</button>
-      <div class="bar-title"><span class="small muted block">${esc(v.datum || '')} · ${esc(v.kunde?.name || '')}</span>${esc(visitTitle(v))}</div>
+      <div class="bar-title"><span class="small muted block">${esc(v.datum || '')} · ${esc(visitKunden(v))}</span>${esc(visitTitle(v))}</div>
       <button class="icon-btn" data-act="editVisit" aria-label="Termin bearbeiten">✎</button>
       <button class="icon-btn" data-act="menu" data-for="visit" data-id="${v.id}" aria-label="Mehr">⋯</button>
     </header>
     <main class="home">
+      ${pairChips(v, all)}
       <section class="card visit-head">
-        <div class="muted small">${esc([v.objekt?.strasse, v.objekt?.plzOrt].filter(Boolean).join(', '))}</div>
+        ${one ? `<div class="muted small">${esc([one.kunde?.name, [one.objekt?.name, one.objekt?.strasse, one.objekt?.plzOrt].filter(Boolean).join(', ')].filter(Boolean).join(' · '))}</div>` : ''}
         <div class="vprog"><span class="mini-progress"><span style="width:${items.length ? Math.round(done / items.length * 100) : 0}%"></span></span>
         <b>${done} von ${items.length} fertig</b></div>
       </section>
-      ${items.length ? items.map(i => {
-        const [cls, label] = itemState(i);
-        const t = unitOf(i);
-        return `<div class="gate-line"><button class="gate-row st-${cls}" data-act="openItem" data-id="${i.id}">
-          <span class="gate-ico">${{ fertig: '✓', maengel: '✗', arbeit: '…', offen: '' }[cls]}</span>
-          <span class="gate-txt"><b>${esc(t.standort || `${t.noun} ohne Standort`)}</b><br><span class="muted small"><span class="kind">${esc(t.noun)}</span> ${esc(unitSub(t))}</span></span>
-          <span class="pill ${cls === 'maengel' ? 'red' : cls === 'fertig' ? 'green' : ''}">${label}</span></button>
-          <button class="dup-btn" data-act="menu" data-for="item" data-id="${i.id}" aria-label="Mehr zu ${esc(t.noun)}">⋯</button></div>`;
-      }).join('') : '<p class="empty">Noch keine Tore oder Türen in diesem Termin.</p>'}
+      ${list}
       <div class="two">
         <button class="big-btn" data-act="addNewGate" data-kind="tor">＋ Tor</button>
         <button class="big-btn" data-act="addNewGate" data-kind="tuer">＋ Tür</button>
@@ -925,16 +1001,58 @@ async function renderVisit() {
     </main>`;
 }
 
+// Welches Paar bekommt eine neue Tür / ein neues Tor? Gefiltertes Paar, sonst das zuletzt gewählte, sonst fragen.
+function pairForNew(v, inEdit) {
+  if (inEdit) return editPair(v);
+  if (v.pairs.length === 1) return v.pairs[0];
+  if (v.filter !== 'all') return pairById(v, v.filter);
+  return pairById(v, v.lastPair) || null;
+}
+function askPairFor(kind) {
+  const v = visit;
+  const sheet = document.getElementById('sheet');
+  sheet.innerHTML = `<div class="sheet-inner">
+    <div class="sheet-grab"></div>
+    <h2 class="sheet-h">${kind === 'tuer' ? 'Neue Tür' : 'Neues Tor'}: für welchen Kunden / welches Objekt?</h2>
+    ${v.pairs.map(p => `<button class="big-btn" data-act="addNewGateIn" data-kind="${kind}" data-pair="${p.id}">${esc(pairLabel(p))}</button>`).join('')}
+    <button class="big-btn" data-act="cancelDel">Abbrechen</button>
+  </div>`;
+  sheet.classList.add('show');
+}
+async function movePairAsk(inspId) {
+  const i = (insp?.id === inspId ? insp : await db.get('inspections', inspId)); if (!i?.visitId) return;
+  const v = ensurePairs(await db.get('visits', i.visitId)); if (!v) return;
+  const cur = pairOfItem(v, i);
+  const sheet = document.getElementById('sheet');
+  sheet.innerHTML = `<div class="sheet-inner">
+    <div class="sheet-grab"></div>
+    <h2 class="sheet-h">Kunde / Objekt für diese ${esc(unitOf(i).noun)}</h2>
+    ${v.pairs.map(p => `<button class="big-btn ${p.id === cur.id ? 'primary' : ''}" data-act="movePair" data-id="${i.id}" data-pair="${p.id}">${p.id === cur.id ? '✓ ' : ''}${esc(pairLabel(p))}</button>`).join('')}
+    <button class="big-btn" data-act="menuGo" data-href="#/t/${v.id}/edit">＋ Weiteres Paar im Termin anlegen</button>
+    <button class="big-btn" data-act="cancelDel">Abbrechen</button>
+  </div>`;
+  sheet.classList.add('show');
+}
+async function movePair(inspId, pairId) {
+  const i = (insp?.id === inspId ? insp : await db.get('inspections', inspId)); if (!i) return;
+  const v = ensurePairs(await db.get('visits', i.visitId)); const p = pairById(v, pairId); if (!p) return;
+  Object.assign(i, { pairId: p.id, customerId: p.customerId, siteId: p.siteId });
+  i.header.kunde = structuredClone(p.kunde); i.header.objekt = structuredClone(p.objekt);
+  if (insp?.id === i.id) { await saveNow(); renderStep(); } else { await db.put('inspections', i); if (visit) renderVisit(); }
+  snack(`Zugeordnet: ${pairLabel(p)}`);
+}
+
 // Im Büro: Kunde, Objekt, Datum und die Tore vorbereiten
 async function renderVisitEdit() {
-  const v = visit, items = await visitItems(v);
-  const gates = (await db.all('gates')).filter(g => g.siteId === v.siteId && !items.some(i => i.gateId === g.id));
+  const v = ensurePairs(visit), allItems = await visitItems(v), P = editPair(v);
+  const items = allItems.filter(i => pairOfItem(v, i).id === P.id);
+  const gates = (await db.all('gates')).filter(g => g.siteId === P.siteId && !allItems.some(i => i.gateId === g.id));
   const sites = await db.all('sites');
   const groupHTML = (gid) => {
     const g = TEMPLATE_TORE.header.find(x => x.id === gid);
     return `<section class="card form-group"><h2 class="h-menu">${esc(g.title)}<button class="more-btn" data-act="menu" data-for="${gid}" data-id="${v.id}" aria-label="Mehr zu ${esc(g.title)}">⋯</button></h2><div class="grid">${g.fields.map(f => `
       <label class="fld ${f.half ? 'half' : ''}"><span class="lbl">${esc(f.label)}${f.required ? ' <i class="req">*</i>' : ''}</span>
-        <input class="field" data-vh="${gid}.${f.key}" value="${esc(v[gid]?.[f.key])}" enterkeyhint="next" autocomplete="off" ${f.key === 'name' ? `data-suggest="${gid}" role="combobox" aria-autocomplete="list"` : ''}>
+        <input class="field" data-vh="${gid}.${f.key}" value="${esc(P[gid]?.[f.key])}" enterkeyhint="next" autocomplete="off" ${f.key === 'name' ? `data-suggest="${gid}" role="combobox" aria-autocomplete="list"` : ''}>
         ${f.key === 'name' ? `<div class="suggest hidden" id="sg-${gid}" role="listbox"></div>` : ''}</label>`).join('')}</div></section>`;
   };
   $app.innerHTML = `
@@ -946,10 +1064,12 @@ async function renderVisitEdit() {
     <main class="step">
       <section class="card"><label class="fld"><span class="lbl">Datum</span>
         <input class="field" data-vf="datum" value="${esc(v.datum)}" inputmode="numeric"></label></section>
+      ${v.pairs.length > 1 ? '' : '<p class="muted small pair-tip">Mehrere Kunden oder Objekte in diesem Termin? Mit „＋ Paar“ ein weiteres Paar aus Kunde und Objekt anlegen.</p>'}
+      ${pairChips(v, allItems, { edit: true })}
       ${groupHTML('kunde')}
       ${groupHTML('objekt')}
       <section class="card">
-        <h2>Tore und Türen in diesem Termin <span class="muted small">${items.length}</span></h2>
+        <h2>${v.pairs.length > 1 ? 'Tore und Türen für dieses Paar' : 'Tore und Türen in diesem Termin'} <span class="muted small">${items.length}</span></h2>
         ${items.map(i => {
           const t = unitOf(i);
           const started = i.status === 'done' || Object.values(i.answers || {}).some(a => a.s);
@@ -976,7 +1096,7 @@ async function renderVisitEdit() {
 // Kunde- und Objekt-Feld sind zugleich Suche: beim Tippen bekannte Einträge vorschlagen.
 // Antippen übernimmt den Eintrag, einfach weitertippen legt einen neuen an.
 async function setupSuggest(sites) {
-  const v = visit;
+  const v = editPair(visit);
   const custs = await db.all('customers');
   const byId = Object.fromEntries(custs.map(c => [c.id, c]));
   const norm = (x) => String(x || '').toLowerCase();
@@ -1030,27 +1150,40 @@ async function dropIfUnused(kind, id) {
 async function pickCustomer(id) {
   clearTimeout(visitTimer);
   const c = await db.get('customers', id); if (!c) return;
-  const oldC = visit.customerId;
-  Object.assign(visit, { customerId: c.id, kunde: strip(c) });
+  const P = editPair(visit), oldC = P.customerId;
+  Object.assign(P, { customerId: c.id, kunde: strip(c) });
   await saveVisit();
   await dropIfUnused('customers', oldC);
   await renderVisitEdit();
   document.querySelector('input[data-vh="objekt.name"]')?.focus();
 }
 
+function refreshPairChip() {
+  const el = document.querySelector(`.pair-chips [data-id="${visit.editPair}"]`);
+  if (el) el.firstChild.nodeValue = pairLabel(editPair(visit)) + ' ';
+}
 let visitTimer = null;
 function saveVisitSoon() { clearTimeout(visitTimer); markUnsaved(); visitTimer = setTimeout(saveVisit, 400); }
 async function saveVisit() {
   clearTimeout(visitTimer);
   const v = visit;
+  if (!v) return;
+  // Felder des ersten Paars zusätzlich oben ablegen (für ältere Programmteile und Suche)
+  if (v.pairs?.length) Object.assign(v, { customerId: v.pairs[0].customerId, siteId: v.pairs[0].siteId, kunde: v.pairs[0].kunde, objekt: v.pairs[0].objekt });
   await db.put('visits', v);
-  // Kunde und Objekt als eigene Datensätze, und in alle offenen Protokolle dieses Termins übernehmen
-  await db.put('customers', { ...(await db.get('customers', v.customerId) || {}), id: v.customerId, ...v.kunde });
-  await db.put('sites', { ...(await db.get('sites', v.siteId) || {}), id: v.siteId, customerId: v.customerId, ...v.objekt });
+  // Kunde und Objekt jedes Paars als eigene Datensätze, und in die offenen Protokolle des jeweiligen Paars übernehmen
+  ensurePairs(v);
+  for (const p of v.pairs) {
+    await db.put('customers', { ...(await db.get('customers', p.customerId) || {}), id: p.customerId, ...p.kunde });
+    await db.put('sites', { ...(await db.get('sites', p.siteId) || {}), id: p.siteId, customerId: p.customerId, ...p.objekt });
+  }
   for (const i of await visitItems(v)) {
-    if (i.status === 'done') continue;
-    i.header.kunde = structuredClone(v.kunde); i.header.objekt = structuredClone(v.objekt);
-    i.customerId = v.customerId; i.siteId = v.siteId;
+    const p = pairOfItem(v, i);
+    if (i.pairId !== p.id) i.pairId = p.id;
+    if (i.status !== 'done') {
+      i.header.kunde = structuredClone(p.kunde); i.header.objekt = structuredClone(p.objekt);
+      i.customerId = p.customerId; i.siteId = p.siteId;
+    }
     await db.put('inspections', i);
   }
   showSaved();
@@ -1059,24 +1192,25 @@ async function pickSite(siteId) {
   clearTimeout(visitTimer);
   const st = await db.get('sites', siteId); if (!st) return;
   const c = await db.get('customers', st.customerId) || {};
-  const oldS = visit.siteId, oldC = visit.customerId;
-  Object.assign(visit, { siteId: st.id, customerId: st.customerId || visit.customerId, objekt: strip(st), ...(st.customerId ? { kunde: strip(c) } : {}), sitePicked: true });
+  const P = editPair(visit), oldS = P.siteId, oldC = P.customerId;
+  Object.assign(P, { siteId: st.id, customerId: st.customerId || P.customerId, objekt: strip(st), ...(st.customerId ? { kunde: strip(c) } : {}) });
   await saveVisit();
   await dropIfUnused('sites', oldS);
-  if (oldC !== visit.customerId) await dropIfUnused('customers', oldC);
+  if (oldC !== P.customerId) await dropIfUnused('customers', oldC);
   renderVisitEdit();
 }
-async function addGateToVisit(gateId, kind = 'tor') {
-  const v = visit;
+async function addGateToVisit(gateId, kind = 'tor', pair = null) {
+  const v = ensurePairs(visit), p = pair || editPair(v);
   const pre = gateId ? await prefillFromGate(gateId) : { header: {}, kind };
-  return newInspection({ ...pre, visitId: v.id, customerId: v.customerId, siteId: v.siteId, agName: v.agName,
-    header: { ...pre.header, kunde: structuredClone(v.kunde), objekt: structuredClone(v.objekt) } }, { open: false, step: 1 });
+  return newInspection({ ...pre, visitId: v.id, customerId: p.customerId, siteId: p.siteId, agName: v.agName, pairId: p.id,
+    header: { ...pre.header, kunde: structuredClone(p.kunde), objekt: structuredClone(p.objekt) } }, { open: false, step: 1 });
 }
 async function nextInVisit() {
   await saveNow();
   const items = await visitItems({ id: insp.visitId });
   const idx = items.findIndex(i => i.id === insp.id);
-  const next = [...items.slice(idx + 1), ...items.slice(0, idx)].find(i => i.status !== 'done');
+  const rest = [...items.slice(idx + 1), ...items.slice(0, idx)].filter(i => i.status !== 'done');
+  const next = rest.find(i => i.pairId === insp.pairId) || rest[0];
   if (next) { insp = null; openItem(next); }
   else { location.hash = `#/t/${items[0]?.visitId}`; setTimeout(() => snack('Alle Tore dieses Termins sind fertig.'), 200); }
 }
@@ -1243,14 +1377,35 @@ document.addEventListener('click', async (e) => {
     case 'pickSite': return pickSite(b.dataset.id);
     case 'pickCustomer': return pickCustomer(b.dataset.id);
     case 'addKnownGate': await saveVisit(); await addGateToVisit(b.dataset.id); buzz(); return renderVisitEdit();
+    case 'filterPair': { ensurePairs(visit); visit.filter = b.dataset.id; if (b.dataset.id !== 'all') { visit.lastPair = visit.editPair = b.dataset.id; } await saveVisit(); return renderVisit(); }
+    case 'editPairSel': { await saveVisit(); visit.editPair = visit.filter = visit.lastPair = b.dataset.id; await saveVisit(); return renderVisitEdit(); }
+    case 'addPair': {
+      closeJump();
+      if (!visit || visit.id !== (b.dataset.id || visit.id)) visit = await db.get('visits', b.dataset.id);
+      if (!visit) return;
+      ensurePairs(visit); await saveVisit();
+      const p = { id: uid(), customerId: uid(), siteId: uid(), kunde: {}, objekt: {} };
+      visit.pairs.push(p); visit.editPair = visit.filter = visit.lastPair = p.id;
+      await saveVisit();
+      if (!/\/edit$/.test(location.hash)) { location.hash = `#/t/${visit.id}/edit`; return; }
+      await renderVisitEdit(); document.querySelector('input[data-vh="kunde.name"]')?.focus(); return;
+    }
+    case 'addNewGateIn': { closeJump(); const p = pairById(visit, b.dataset.pair); visit.lastPair = p.id; await saveVisit(); const r = await addGateToVisit(null, b.dataset.kind || 'tor', p); return (location.hash = `#/p/${r.id}/0`); }
+    case 'movePairAsk': return movePairAsk(b.dataset.id);
+    case 'movePair': closeJump(); return movePair(b.dataset.id, b.dataset.pair);
     case 'addAllKnown': {
       await saveVisit();
       const items = await visitItems(visit);
-      for (const g of (await db.all('gates')).filter(g => g.siteId === visit.siteId && !items.some(i => i.gateId === g.id))) await addGateToVisit(g.id);
+      for (const g of (await db.all('gates')).filter(g => g.siteId === editPair(visit).siteId && !items.some(i => i.gateId === g.id))) await addGateToVisit(g.id);
       buzz(); return renderVisitEdit();
     }
-    case 'addNewGate': { await saveVisit(); const r = await addGateToVisit(null, b.dataset.kind || 'tor'); return (location.hash = `#/p/${r.id}/0`); }
-    case 'printVisit': return (location.hash = `#/druck-t/${visit.id}`);
+    case 'addNewGate': {
+      ensurePairs(visit); await saveVisit();
+      const p = pairForNew(visit, /\/edit$/.test(location.hash));
+      if (!p) return askPairFor(b.dataset.kind || 'tor');
+      const r = await addGateToVisit(null, b.dataset.kind || 'tor', p); return (location.hash = `#/p/${r.id}/0`);
+    }
+    case 'printVisit': return (location.hash = `#/druck-t/${visit.id}${visit.pairs?.length > 1 && visit.filter !== 'all' ? '/' + visit.filter : ''}`);
     case 'nextInVisit': return nextInVisit();
     case 'print': await saveNow(); return (location.hash = `#/druck/${insp.id}`);
     case 'printBack': return (location.hash = b.dataset.href || '#/');
@@ -1262,7 +1417,7 @@ document.addEventListener('click', async (e) => {
 
 document.addEventListener('input', (e) => {
   const t = e.target;
-  if (!insp && visit && t.dataset.vh) { const [g, k] = t.dataset.vh.split('.'); (visit[g] ||= {})[k] = t.value; return saveVisitSoon(); }
+  if (!insp && visit && t.dataset.vh) { const [g, k] = t.dataset.vh.split('.'); const P = editPair(ensurePairs(visit)); (P[g] ||= {})[k] = t.value; refreshPairChip(); return saveVisitSoon(); }
   if (!insp && visit && t.dataset.vf) { visit[t.dataset.vf] = t.value; return saveVisitSoon(); }
   if (!insp) return;
   if (t.dataset.h) { const [g, k] = t.dataset.h.split('.'); (insp.header[g] ||= {})[k] = t.value; return saveSoon(); }

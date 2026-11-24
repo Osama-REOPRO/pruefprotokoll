@@ -1,6 +1,6 @@
 // Offline: App-Dateien beim ersten Öffnen zwischenspeichern.
 // Bei jeder neuen Version VERSION erhöhen, damit Handys das Update laden.
-const VERSION = 'v16';
+const VERSION = 'v17';
 const FILES = ['./', './index.html', './styles.css', './app.js', './db.js', './template-tore.js', './print-tore.js', './print-tuer.js', './template-tuer.js', './print.css', './i18n.js', './manifest.webmanifest', './icon.svg', './logo-hotz.jpg', './fonts/carlito-regular.woff2', './fonts/carlito-bold.woff2'];
 
 self.addEventListener('install', e => {

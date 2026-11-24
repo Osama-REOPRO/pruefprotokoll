@@ -351,3 +351,18 @@ kbd { display: inline-block; min-width: 1.6em; padding: 1px 5px; border: 1px sol
 .sg-item:first-child { border-top: 0; }
 .sg-item.on, .sg-item:hover { background: color-mix(in srgb, var(--brand) 10%, var(--card)); }
 .sg-new { padding: 8px 14px; border-top: 1px solid var(--line); background: var(--bg); }
+
+/* Paare Kunde + Objekt im Termin */
+.pair-chips { display: flex; flex-wrap: wrap; gap: 6px; padding: 2px 0 10px; margin-bottom: 2px; }
+.pair-chips::-webkit-scrollbar { display: none; }
+.pchip { flex: none; max-width: 100%; overflow: hidden; text-overflow: ellipsis; min-height: 44px; padding: 6px 14px; border-radius: 99px; border: 1.5px solid var(--line); background: var(--card); font-weight: 600; font-size: .9em; white-space: nowrap; }
+.pchip .n { display: inline-block; min-width: 1.6em; padding: 0 6px; margin-left: 4px; border-radius: 99px; background: var(--na-bg); font-size: .85em; }
+.pchip.on { background: var(--brand); color: var(--brand-ink); border-color: var(--brand); }
+.pchip.on .n { background: rgba(255,255,255,.25); }
+.pchip.add { color: var(--brand); border-style: dashed; border-color: var(--brand); }
+.pair-h { margin: 14px 2px 6px; font-size: .95em; }
+.pair-h .link { color: var(--brand); font-weight: 700; padding: 0; min-height: 32px; }
+.pair-empty { margin: 0 4px 8px; }
+.pair-tip { margin: -4px 4px 8px; }
+.pair-line { display: block; width: 100%; text-align: left; border: 0; cursor: pointer; }
+@media (min-width: 1000px) { .pchip { min-height: 34px; padding: 4px 12px; } .pair-h { grid-column: 1 / -1; } .pair-chips, .pair-empty { grid-column: 1 / -1; } }

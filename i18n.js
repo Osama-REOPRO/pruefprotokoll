@@ -132,10 +132,20 @@ const EN = {
 
   // Druckansicht (Leiste, nicht das Formular)
   'Fotos zu festgestellten Mängeln': 'Photos of defects found',
+  'Alle': 'All', 'Paar': 'Pair', 'Neues Paar': 'New pair', 'Neue Tür: für welchen Kunden / welches Objekt?': 'New door: for which customer / site?',
+  'Neues Tor: für welchen Kunden / welches Objekt?': 'New gate: for which customer / site?', 'Weiteres Paar im Termin anlegen': 'Add another pair to the appointment',
+  'Tore und Türen für dieses Paar': 'Gates and doors for this pair', 'Noch keine Tore oder Türen.': 'No gates or doors yet.', 'ändern': 'change',
+  'Mehrere Kunden oder Objekte in diesem Termin? Mit „＋ Paar“ ein weiteres Paar aus Kunde und Objekt anlegen.': 'Several customers or sites in this appointment? Use "＋ Pair" to add another customer + site pair.',
+  'Paar (weiterer Kunde / weiteres Objekt)': 'Pair (another customer / site)', 'Kunde / Objekt ändern': 'Change customer / site',
+  'Kunde und Objekt bleiben gespeichert.': 'Customer and site stay saved.', 'Paar löschen?': 'Remove pair?',
   'Oder weitertippen: neuer Kunde': 'Or keep typing: new customer', 'Oder weitertippen: neues Objekt': 'Or keep typing: new site',
 };
 
 const RULES = [
+  [/^Paar aus Termin entfernen: (.*)$/, (m) => `Remove pair from appointment: ${m[1]}`],
+  [/^Zugeordnet: (.*)$/, (m) => `Assigned: ${m[1]}`],
+  [/^Kunde \/ Objekt für diese (Tür|Tor)$/, (m) => `Customer / site for this ${m[1] === 'Tür' ? 'door' : 'gate'}`],
+  [/^Dabei wird auch gelöscht: (.+)\. Kunde und Objekt bleiben gespeichert\.$/, (m) => `This also deletes: ${m[1].replace(/(\d+) Protokolle?/, (x, n) => `${n} report${n === '1' ? '' : 's'}`)}. Customer and site stay saved.`],
   [/^(\d+) von (\d+) fertig$/, (m) => `${m[1]} of ${m[2]} done`],
   [/^(\d+) von (\d+) Punkten$/, (m) => `${m[1]} of ${m[2]} items`],
   [/^(\d+) mit Mängeln$/, (m) => `${m[1]} with defects`],
