@@ -366,3 +366,6 @@ label.big-btn { display: flex; align-items: center; justify-content: center; tex
 .tool:disabled { opacity: .45; }
 .defect .dclose { display: block; margin: 0 0 6px auto; }
 .note-line { display: flex; flex-wrap: wrap; gap: 4px 18px; align-items: center; }
+.sort-bar { display: flex; align-items: center; gap: 8px; margin: 4px 0 10px; }
+.sort-bar select.field { flex: 1; min-height: 44px; }
+.sort-bar .sort-dir { flex: none; font-size: 1.2em; border: 2px solid var(--line); background: var(--card); color: var(--ink); }

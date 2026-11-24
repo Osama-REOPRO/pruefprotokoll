@@ -1127,6 +1127,50 @@ function pairChips(v, items, { edit = false } = {}) {
     <button class="pchip add" data-act="addPair">＋ Paar</button>
   </div>`;
 }
+// ---------- Liste im Termin sortieren (Spalte anklicken / Auswahl auf dem Handy) ----------
+const SORTS = [['nr0', 'Reihenfolge'], ['kind', 'Tor / Tür'], ['standort', 'Standort / Lage'], ['nr', 'Nr.'], ['typ', 'Typ'], ['hersteller', 'Hersteller'], ['bj', 'Baujahr'], ['pair', 'Kunde · Objekt'], ['status', 'Status'], ['maengel', 'Mängel']];
+const getSort = () => { const s = settings.get('visitSort', null); return s && SORTS.some(([k]) => k === s.k) ? s : { k: 'nr0', d: 1 }; };
+function sortVal(i, k, v) {
+  const u = unitOf(i), h = i.header || {}, g = h.tor || h.grund || {};
+  switch (k) {
+    case 'kind': return u.noun;
+    case 'standort': return u.standort || '';
+    case 'nr': return u.nr || '';
+    case 'typ': return u.typ || '';
+    case 'hersteller': return g.hersteller || '';
+    case 'bj': return g.bj || '';
+    case 'pair': return v ? pairLabel(pairOfItem(v, i)) : '';
+    case 'status': return { offen: 0, arbeit: 1, fertig: 2, maengel: 3 }[itemState(i)[0]];
+    case 'maengel': return defectCount(i);
+  }
+  return 0;
+}
+// Gibt [Element, ursprüngliche Nummer] zurück; leere Werte stehen immer am Ende
+function sortItems(list, v) {
+  const { k, d } = getSort();
+  const rows = list.map((i, n) => [i, n + 1]);
+  if (k === 'nr0') return d === 1 ? rows : rows.reverse();
+  const key = new Map(rows.map(([i]) => [i, sortVal(i, k, v)]));
+  return rows.sort(([a, na], [b, nb]) => {
+    const x = key.get(a), y = key.get(b);
+    const ex = x === '' || x == null, ey = y === '' || y == null;
+    if (ex || ey) return ex === ey ? na - nb : ex ? 1 : -1;
+    const c = typeof x === 'number' && typeof y === 'number' ? x - y : String(x).localeCompare(String(y), 'de', { numeric: true, sensitivity: 'base' });
+    return c * d || na - nb;
+  });
+}
+function setSort(k) {
+  const cur = getSort();
+  settings.set('visitSort', { k, d: cur.k === k ? -cur.d : 1 });
+  renderVisit();
+}
+function sortBarHTML() {
+  const { k, d } = getSort();
+  return `<div class="sort-bar"><label class="muted small" for="visitSortSel">Sortieren</label>
+    <select class="field sm" id="visitSortSel" data-sort-sel>${SORTS.filter(([x]) => x !== 'pair').map(([x, t]) => `<option value="${x}" ${x === k ? 'selected' : ''}>${t}</option>`).join('')}</select>
+    <button class="icon-btn sm sort-dir" data-act="sortDir" aria-label="${d === 1 ? 'Aufsteigend' : 'Absteigend'}" title="Richtung umkehren">${d === 1 ? '↑' : '↓'}</button></div>`;
+}
+
 function itemRow(i) {
   const [cls, label] = itemState(i);
   const t = unitOf(i);
@@ -1147,9 +1191,9 @@ async function renderVisit() {
   const list = !items.length ? '<p class="empty">Noch keine Tore oder Türen in diesem Termin.</p>'
     : showAll ? v.pairs.map(p => {
         const its = all.filter(i => pairOfItem(v, i).id === p.id);
-        return `<h3 class="pair-h"><button class="link" data-act="filterPair" data-id="${p.id}">${esc(pairLabel(p))} ›</button></h3>${its.map(itemRow).join('') || '<p class="muted small pair-empty">Noch keine Tore oder Türen.</p>'}`;
+        return `<h3 class="pair-h"><button class="link" data-act="filterPair" data-id="${p.id}">${esc(pairLabel(p))} ›</button></h3>${sortItems(its, v).map(([i]) => itemRow(i)).join('') || '<p class="muted small pair-empty">Noch keine Tore oder Türen.</p>'}`;
       }).join('')
-    : items.map(itemRow).join('');
+    : sortItems(items, v).map(([i]) => itemRow(i)).join('');
   $app.innerHTML = `
     <header class="bar">
       <button class="icon-btn" data-act="toHome" aria-label="Übersicht">‹</button>
@@ -1164,6 +1208,7 @@ async function renderVisit() {
         <div class="vprog"><span class="mini-progress"><span style="width:${items.length ? Math.round(done / items.length * 100) : 0}%"></span></span>
         <b>${done} von ${items.length} fertig</b></div>
       </section>
+      ${items.length > 1 ? sortBarHTML() : ''}
       ${list}
       <div class="two">
         <button class="big-btn" data-act="addNewGate" data-kind="tor">＋ Tor</button>
@@ -1480,6 +1525,8 @@ document.addEventListener('click', async (e) => {
     case 'checkNext': if (!autoDone(step)) setMarked(step, true); saveNow(); window.scrollTo(0, 0); return go(step + 1);
     case 'secCheck': { const i = +b.dataset.step; setMarked(i, !isMarked(i)); buzz(15); saveNow(); return refreshChrome(); }
     case 'set': return setAnswer(b.dataset.id, b.dataset.v);
+    case 'sortBy': return setSort(b.dataset.k);
+    case 'sortDir': { const s = getSort(); settings.set('visitSort', { k: s.k, d: -s.d }); return renderVisit(); }
     case 'clearSec': if (b.dataset.step) step = +b.dataset.step; return clearSection(step);
     case 'allOk': if (b.dataset.step) step = +b.dataset.step; return bulk(tpl.sections[step - 1], 'ok');
     case 'asLast': if (b.dataset.step) step = +b.dataset.step; return bulk(tpl.sections[step - 1], 'last');
@@ -1626,6 +1673,7 @@ document.addEventListener('input', (e) => {
   if ('sigAbsent' in t.dataset) { insp.sig.ag.absent = t.checked; document.getElementById('agBox').classList.toggle('hidden', t.checked); return saveSoon(); }
 });
 document.addEventListener('change', (e) => {
+  if (e.target.dataset?.sortSel !== undefined) { settings.set('visitSort', { k: e.target.value, d: 1 }); return renderVisit(); }
   const f = e.target.dataset?.photoFor;
   if (f && e.target.files?.[0]) { addPhoto(f, e.target.files[0]); e.target.value = ''; return; }
   if (e.target.type === 'checkbox') e.target.dispatchEvent(new Event('input', { bubbles: true })); });
@@ -1861,10 +1909,10 @@ async function renderVisitDesk() {
       </div>
       <section class="dk-panel">
         ${items.length ? `<table class="dt">
-          <thead><tr><th class="num">#</th><th>Tor / Tür</th><th>Standort / Lage</th><th>Nr.</th><th>Typ</th><th>Hersteller</th><th class="num">Bj.</th>${showAll ? '<th>Kunde · Objekt</th>' : ''}<th>Status</th><th class="num">Mängel</th><th></th></tr></thead>
+          <thead><tr>${[['nr0', '#', 'num'], ['kind', 'Tor / Tür'], ['standort', 'Standort / Lage'], ['nr', 'Nr.'], ['typ', 'Typ'], ['hersteller', 'Hersteller'], ['bj', 'Bj.', 'num'], ...(showAll ? [['pair', 'Kunde · Objekt']] : []), ['status', 'Status'], ['maengel', 'Mängel', 'num']].map(([k, t, c]) => { const s = getSort(); const on = s.k === k; return `<th class="sortable ${c || ''} ${on ? 'on' : ''}" data-act="sortBy" data-k="${k}" title="Nach ${t === '#' ? 'Reihenfolge' : t} sortieren" aria-sort="${on ? (s.d === 1 ? 'ascending' : 'descending') : 'none'}">${t}<span class="sort-ind">${on ? (s.d === 1 ? ' ▲' : ' ▼') : ''}</span></th>`; }).join('')}<th></th></tr></thead>
           <tbody>${showAll
-            ? v.pairs.map(p => { const its = all.filter(i => pairOfItem(v, i).id === p.id); return `<tr class="dt-group"><td colspan="11"><button class="link" data-act="filterPair" data-id="${p.id}">${esc(pairLabel(p))} ›</button> <span class="muted">${its.length}</span></td></tr>${its.map((i, n) => tr(i, n + 1)).join('')}`; }).join('')
-            : items.map((i, n) => tr(i, n + 1)).join('')}</tbody></table>`
+            ? v.pairs.map(p => { const its = all.filter(i => pairOfItem(v, i).id === p.id); return `<tr class="dt-group"><td colspan="11"><button class="link" data-act="filterPair" data-id="${p.id}">${esc(pairLabel(p))} ›</button> <span class="muted">${its.length}</span></td></tr>${sortItems(its, v).map(([i, n]) => tr(i, n)).join('')}`; }).join('')
+            : sortItems(items, v).map(([i, n]) => tr(i, n)).join('')}</tbody></table>`
           : '<p class="dk-empty">Noch keine Tore oder Türen. Oben mit „＋ Tor“ oder „＋ Tür“ hinzufügen.</p>'}
       </section>
     </main>`;

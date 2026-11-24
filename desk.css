@@ -260,3 +260,7 @@ html.desk .check-btn { min-height: 32px; height: 32px; padding: 0 14px; border-r
 html.desk .dc-note { display: flex; gap: 6px; align-items: center; }
 html.desk .dc-note .field { flex: 1; min-width: 0; }
 html.desk .dc-more { flex: none; }
+html.desk .dt th.sortable { cursor: pointer; user-select: none; }
+html.desk .dt th.sortable:hover { color: var(--ink); }
+html.desk .dt th.sortable.on { color: var(--brand); }
+html.desk .dt th .sort-ind { font-size: .85em; }
