@@ -255,3 +255,5 @@ html.desk .dk-sec:last-child { border-bottom: 0; }
 html.desk .dk-sec > .sec-title { margin-top: 4px; }
 html.desk .dk-finish-nav { grid-column: 1 / -1; display: flex; flex-wrap: wrap; gap: 8px; }
 html.desk .dk-finish-nav .nav-btn { height: 36px; min-height: 36px; padding: 0 20px; }
+html.desk .sec-check { margin: 12px 0 0; }
+html.desk .check-btn { min-height: 32px; height: 32px; padding: 0 14px; border-radius: 6px; border-width: 1px; font-size: .95em; }

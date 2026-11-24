@@ -348,3 +348,12 @@ label.big-btn { display: flex; align-items: center; justify-content: center; tex
 .sec-title .sec-n { font-size: .55em; font-weight: 700; color: var(--muted); order: -1; flex-basis: 100%; letter-spacing: .03em; }
 .sec-title .sec-c { font-size: .6em; font-weight: 700; color: var(--muted); background: var(--na-bg); padding: 1px 8px; border-radius: 99px; }
 .gate-sum + .sec-title, .copy-last + .sec-title { margin-top: 14px; }
+
+/* „✓ Geprüft“ am Ende jedes Abschnitts */
+.sec-check { display: flex; align-items: center; flex-wrap: wrap; gap: 6px 12px; margin: 18px 0 8px; }
+.check-btn { min-height: 52px; padding: 0 18px; border-radius: 12px; border: 2px dashed var(--line); background: var(--card); color: var(--ink); font-weight: 700; font-size: 1em; }
+.check-btn.on { border-style: solid; background: var(--ok); border-color: var(--ok); color: #fff; }
+.check-btn:disabled { opacity: 1; cursor: default; }
+.bottom:has([data-act=checkNext]) .nav-btn { white-space: nowrap; padding: 0 6px; font-size: .95em; }
+.bottom .nav-btn[data-act=prev] { flex: .9; }
+.bottom .nav-btn[data-act=checkNext] { flex: 1.6; }

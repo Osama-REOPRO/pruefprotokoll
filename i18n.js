@@ -89,7 +89,7 @@ const EN = {
   'Alles wie letztes Mal': 'Everything as last time', 'Wie letztes Mal': 'Same as last time', 'letztes Mal': 'last time',
 
   // Prüfzeilen
-  'o.B.': 'OK', 'B.': 'Defect', 'n.v.': 'N/A', 'Rest o.B.': 'Rest OK', 'Notiz': 'Note', 'Notiz zu dieser Zeile': 'Note for this row',
+  'o.B.': 'OK', 'B.': 'Defect', 'n.v.': 'N/A', 'Rest o.B.': 'Rest OK', 'Geprüft': 'Checked', 'Abschnitt als geprüft markieren': 'Mark section as checked', 'Check und weiter': 'Check and next', 'alle Punkte ausgefüllt': 'all rows filled', 'nochmal tippen zum Zurücknehmen': 'tap again to undo', 'nochmal klicken zum Zurücknehmen': 'click again to undo', 'Notiz': 'Note', 'Notiz zu dieser Zeile': 'Note for this row',
   'Mangel beschreiben, steht auf dem Ausdruck neben der Zeile': 'Describe the defect (printed next to the row)', 'Foto aufnehmen': 'Take photo', 'Foto löschen': 'Delete photo',
   'ja': 'yes', 'nein': 'no', 'trifft nicht zu': 'not applicable',
   'defekt': 'defective', 'verschlissen': 'worn', 'fehlt': 'missing', 'lose': 'loose', 'korrodiert': 'corroded', 'muss getauscht werden': 'must be replaced',

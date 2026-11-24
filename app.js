@@ -67,16 +67,30 @@ function stats() {
 }
 
 function stepStatus(i) {
-  if (i === 0) {
-    const missing = tpl.header.flatMap(g => g.fields.filter(f => f.required && !insp.header[g.id]?.[f.key]));
-    return missing.length ? 'open' : 'done';
-  }
+  if (i === 0) return isMarked(0) ? 'done' : 'open';
   if (i === stepCount() - 1) return insp.status === 'done' ? 'done' : 'open';
   const sec = tpl.sections[i - 1];
   const st = sec.items.filter(isCheck).map(it => insp.answers[it.id]?.s);
-  // Leere Zeile = trifft nicht zu (wie auf Papier). Abschnitt gilt als erledigt, sobald er angesehen wurde.
+  // Erledigt: alle Punkte ausgefüllt oder mit „✓ Geprüft“ bestätigt. Nur Ansehen zählt nicht.
   if (st.includes('b')) return 'defect';
-  return st.some(Boolean) || (insp.maxStep ?? 0) > i ? 'done' : 'open';
+  return autoDone(i) || isMarked(i) ? 'done' : 'open';
+}
+// „✓ Geprüft“ je Abschnitt (Stammdaten: 'head', sonst die Abschnitts-ID)
+const secKey = (i) => i === 0 ? 'head' : tpl.sections[i - 1]?.id;
+const isMarked = (i) => !!insp.checked?.[secKey(i)];
+function autoDone(i) {
+  if (i <= 0 || i >= stepCount() - 1) return false;
+  const st = tpl.sections[i - 1].items.filter(isCheck).map(it => insp.answers[it.id]?.s);
+  return st.length > 0 && st.every(Boolean);
+}
+function setMarked(i, on) {
+  insp.checked = { ...(insp.checked || {}) };
+  if (on) insp.checked[secKey(i)] = true; else delete insp.checked[secKey(i)];
+}
+function checkBtn(i = step) {
+  const auto = autoDone(i), on = auto || isMarked(i);
+  const hint = auto ? 'alle Punkte ausgefüllt' : on ? (DESK ? 'nochmal klicken zum Zurücknehmen' : 'nochmal tippen zum Zurücknehmen') : '';
+  return `<div class="sec-check"><button class="check-btn ${on ? 'on' : ''}" data-act="secCheck" data-step="${i}" aria-pressed="${on}" ${auto ? 'disabled' : ''}>${on ? '✓ Geprüft' : '☐ Abschnitt als geprüft markieren'}</button>${hint ? `<span class="muted small">${hint}</span>` : ''}</div>`;
 }
 
 // ---------- Speichern ----------
@@ -450,7 +464,8 @@ function topBar() {
 function bottomBar(nextLabel, nextClass = '') {
   return `<nav class="bottom">
     <button class="nav-btn" data-act="prev" ${step === 0 ? 'disabled' : ''}>‹ Zurück</button>
-    <button class="nav-btn next ${nextClass}" data-act="next">${nextLabel}</button>
+    <button class="nav-btn" data-act="next">${nextLabel}</button>
+    <button class="nav-btn next ${nextClass}" data-act="checkNext">✓ Check und weiter</button>
     <button class="kb-hint" data-act="keys"><kbd>1</kbd> o.B. <kbd>2</kbd> B.${(tpl.states || []).includes('nv') ? ' <kbd>3</kbd> n.v.' : ''} · <kbd>↑</kbd><kbd>↓</kbd> Zeile · <kbd>←</kbd><kbd>→</kbd> Abschnitt · <kbd>?</kbd> alle Kürzel</button>
   </nav>`;
 }
@@ -461,11 +476,7 @@ function refreshChrome() {
   if (side) side.outerHTML = sideSteps();
   if (DESK) document.querySelectorAll('.dk-sec').forEach(el => { const t = el.querySelector('.sec-title'); if (t) t.outerHTML = secTitle(+el.dataset.step); });
   else { const st = document.querySelector('.sec-title'); if (st) st.outerHTML = secTitle(); }
-  const nb = document.querySelector('.nav-btn.next');
-  if (!DESK && nb && step > 0 && step < stepCount() - 1) {
-    const open = tpl.sections[step - 1].items.filter(isCheck).filter(it => !insp.answers[it.id]?.s).length;
-    nb.textContent = 'Weiter ›';
-  }
+  document.querySelectorAll('.sec-check').forEach(el => { el.outerHTML = checkBtn(+el.querySelector('[data-step]').dataset.step); });
   const tools = (i, root) => {
     const untouched = tpl.sections[i - 1].items.filter(isCheck).filter(it => !insp.answers[it.id]?.s);
     const ok = root.querySelector('[data-act="allOk"]');
@@ -525,8 +536,9 @@ function renderHeader() {
         <p class="hint">Oder Daten unten prüfen und dann Abschnitt für Abschnitt bestätigen.</p>` : (insp.gateId ? '<p class="hint">Daten vom letzten Mal übernommen. Nur prüfen, was sich geändert hat.</p>' : '')}
       ${insp.visitId ? `<button class="hint pair-line" data-act="movePairAsk" data-id="${insp.id}"><span>Kunde und Objekt kommen vom Termin:</span> <b>${esc(pairLabel({ objekt: insp.header.objekt, kunde: insp.header.kunde }))}</b> <span class="link-ish">ändern ›</span></button>` : ''}
       ${groups}
+      ${checkBtn()}
     </main>
-    ${bottomBar('Zur Prüfung ›', 'ready')}`)) return;
+    ${bottomBar('Weiter ›')}`)) return;
 }
 
 // ---------- Prüfabschnitt ----------
@@ -632,6 +644,7 @@ function renderSection(sec) {
       </div>
       ${DESK ? `<div class="dhead"><span>Prüfpunkt</span><span>${(tpl.states || ['ok', 'b']).map(v => STATE_BTN[v][2]).join(' · ')}</span><span>Notiz (steht neben dem Kästchen)</span></div>` : ''}
       ${sec.items.map(rowHTML).join('')}
+      ${checkBtn()}
     </main>
     ${bottomBar('Weiter ›')}`)) return;
   hydrateThumbs();
@@ -869,6 +882,7 @@ function copyAllFromLast() {
     if (p.s) n++;
   }
   if (!insp.remarks && insp.prevRemarks) insp.remarks = insp.prevRemarks;
+  for (let i = 0; i < stepCount() - 1; i++) setMarked(i, true); // „Nichts geändert“ = alles angesehen
   buzz([20, 60, 20]);
   saveNow();
   go(stepCount() - 1);
@@ -918,7 +932,7 @@ async function duplicateItem(id) {
     templateId: src.templateId, header, customerId: src.customerId, siteId: src.siteId, gateId: null,
     visitId: src.visitId, pairId: src.pairId, order: (src.order ?? 0) + 0.5, agName: src.sig?.ag?.name || '',
   }, { open: false });
-  Object.assign(rec, { answers, angebot: !!src.angebot, ort: src.ort || '', copiedFrom: src.id, maxStep: t.sections.length });
+  Object.assign(rec, { answers, angebot: !!src.angebot, ort: src.ort || '', copiedFrom: src.id, maxStep: t.sections.length, checked: Object.fromEntries(Object.entries(src.checked || {}).filter(([k]) => k !== 'head')) });
   await db.put('inspections', rec);
   buzz();
   location.hash = `#/p/${rec.id}/0`;
@@ -1434,6 +1448,8 @@ document.addEventListener('click', async (e) => {
     case 'goto': closeJump(); return go(+b.dataset.step);
     case 'prev': return go(step - 1);
     case 'next': window.scrollTo(0, 0); return go(step + 1);
+    case 'checkNext': if (!autoDone(step)) setMarked(step, true); saveNow(); window.scrollTo(0, 0); return go(step + 1);
+    case 'secCheck': { const i = +b.dataset.step; setMarked(i, !isMarked(i)); buzz(15); saveNow(); return refreshChrome(); }
     case 'set': return setAnswer(b.dataset.id, b.dataset.v);
     case 'allOk': if (b.dataset.step) step = +b.dataset.step; return bulk(tpl.sections[step - 1], 'ok');
     case 'asLast': if (b.dataset.step) step = +b.dataset.step; return bulk(tpl.sections[step - 1], 'last');
@@ -1581,7 +1597,7 @@ const KEYS = [
   ['1 / O', 'o.B.'], ['2 / B', 'B. (Befund), danach direkt Notiz tippen'], ['3 / V', 'n.v. (Türen)'],
   ['↓ / J', 'nächste Zeile'], ['↑ / K', 'vorige Zeile'], ['N', 'Notiz zur Zeile'],
   ['→', 'nächster Abschnitt'], ['←', 'voriger Abschnitt'],
-  ['A', 'Rest o.B.'], ['L', 'Wie letztes Mal'], ['P', 'Drucken / PDF'],
+  ['A', 'Rest o.B.'], ['G', 'Abschnitt als geprüft markieren'], ['L', 'Wie letztes Mal'], ['P', 'Drucken / PDF'],
   ['H', 'Feldhandbuch'], ['Esc', 'Feld verlassen / Fenster schließen'], ['?', 'diese Hilfe'],
 ];
 function openKeys() {
@@ -1636,6 +1652,11 @@ document.addEventListener('keydown', (e) => {
   if (k === 'ArrowRight') { e.preventDefault(); return click('.bottom [data-act=next], .bottom [data-act=finish], .bottom [data-act=nextInVisit], .bottom [data-act=nextGate]'); }
   if (k === 'ArrowLeft') { e.preventDefault(); return click('.bottom [data-act=prev]'); }
   if (k === 'p') { e.preventDefault(); saveNow(); return (location.hash = `#/druck/${insp.id}`); }
+  if (k === 'g') { // Abschnitt als geprüft markieren / zurücknehmen
+    const root = all ? (kbRows()[kbIdx]?.closest('.dk-sec') || document.getElementById(`sec-${step}`)) : document;
+    const b = root?.querySelector('[data-act=secCheck]'); if (b && !b.disabled) { e.preventDefault(); b.click(); }
+    return;
+  }
   if (!inSection) return;
   if (k === 'ArrowDown' || k === 'j') { e.preventDefault(); return kbSelect(kbIdx + 1); }
   if (k === 'ArrowUp' || k === 'k') { e.preventDefault(); return kbSelect(kbIdx - 1); }
