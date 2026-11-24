@@ -170,6 +170,8 @@ async function routeInner() {
       insp = await db.get('inspections', parts[1]);
       if (!insp) { location.hash = '#/'; return; }
       tpl = TEMPLATES[insp.templateId];
+      // Anzahl der Flügel steht jetzt unter Grunddaten Tür (früher bei Tür)
+      if (insp.header?.tuer?.fluegel && !insp.header.grund?.fluegel) { (insp.header.grund ||= {}).fluegel = insp.header.tuer.fluegel; delete insp.header.tuer.fluegel; }
       // Name des Kunden-Unterzeichners vom letzten Tor dieses Termins vorschlagen
       if (insp.visitId && !insp.sig.ag.name && insp.status !== 'done') {
         const v = await db.get('visits', insp.visitId);
@@ -1090,8 +1092,8 @@ async function renderVisitEdit() {
         <input class="field" data-vf="datum" value="${esc(v.datum)}" inputmode="numeric"></label></section>
       ${v.pairs.length > 1 ? '' : '<p class="muted small pair-tip">Mehrere Kunden oder Objekte in diesem Termin? Mit „＋ Paar“ ein weiteres Paar aus Kunde und Objekt anlegen.</p>'}
       ${pairChips(v, allItems, { edit: true })}
-      ${groupHTML('kunde')}
       ${groupHTML('objekt')}
+      ${groupHTML('kunde')}
       <section class="card">
         <h2>${v.pairs.length > 1 ? 'Tore und Türen für dieses Paar' : 'Tore und Türen in diesem Termin'} <span class="muted small">${items.length}</span></h2>
         ${items.map(i => {
@@ -1417,7 +1419,7 @@ document.addEventListener('click', async (e) => {
       visit.pairs.push(p); visit.editPair = visit.filter = visit.lastPair = p.id;
       await saveVisit();
       if (!/\/edit$/.test(location.hash)) { location.hash = `#/t/${visit.id}/edit`; return; }
-      await renderVisitEdit(); document.querySelector('input[data-vh="kunde.name"]')?.focus(); return;
+      await renderVisitEdit(); document.querySelector('input[data-vh="objekt.name"]')?.focus(); return;
     }
     case 'addNewGateIn': { closeJump(); const p = pairById(visit, b.dataset.pair); visit.lastPair = p.id; await saveVisit(); const r = await addGateToVisit(null, b.dataset.kind || 'tor', p); return (location.hash = `#/p/${r.id}/0`); }
     case 'movePairAsk': return movePairAsk(b.dataset.id);

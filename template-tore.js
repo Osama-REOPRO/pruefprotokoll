@@ -18,6 +18,13 @@ export const TEMPLATE_TORE = {
   // customer = Kunde, site = Objekt, gate = Tor (wird bei der nächsten Prüfung übernommen)
   header: [
     {
+      id: 'objekt', title: 'Objekt', scope: 'site', fields: [
+        { key: 'name', label: 'Objekt (Bezeichnung)' },
+        { key: 'strasse', label: 'Straße, Nr.' },
+        { key: 'plzOrt', label: 'PLZ Ort', required: true },
+      ],
+    },
+    {
       id: 'kunde', title: 'Kunde', scope: 'customer', fields: [
         { key: 'name', label: 'Kunde', required: true },
         { key: 'zusatz', label: 'Zusatz (z. B. c/o Hausverwaltung)' },
@@ -26,29 +33,24 @@ export const TEMPLATE_TORE = {
       ],
     },
     {
-      id: 'objekt', title: 'Objekt', scope: 'site', fields: [
-        { key: 'name', label: 'Objekt (Bezeichnung)' },
-        { key: 'strasse', label: 'Straße, Nr.' },
-        { key: 'plzOrt', label: 'PLZ Ort', required: true },
-      ],
-    },
-    {
       id: 'tor', title: 'Tor', scope: 'gate', fields: [
+        // Reihenfolge wie auf dem Papier (Bezeichnung): Typ · Fabr.-Nr. + Bj. · Hersteller · Panzer Abmess. + Gew.
         { key: 'standort', label: 'Standort / Lage', required: true, hint: 'z. B. Hofeinfahrt, EG Flur zum Büro' },
         { key: 'typ', label: 'Typ', suggest: ['Sektionaltor', 'Rolltor', 'Schiebetor', 'Stahlschiebetor', 'Drehflügeltor', 'Falttor', 'Schnelllauftor', 'T30', 'T90'] },
-        { key: 'fabrNr', label: 'Fabr.-Nr.' },
+        { key: 'fabrNr', label: 'Fabr.-Nr.', half: true },
         { key: 'bj', label: 'Baujahr', inputmode: 'numeric', half: true },
-        { key: 'hersteller', label: 'Hersteller', half: true, suggest: ['Hörmann', 'Hotz', 'Novoferm', 'Teckentrup', 'Tousek'] },
-        { key: 'abmessung', label: 'Panzer Abmess. (B x H in m)', inputmode: 'decimal', half: true },
+        { key: 'hersteller', label: 'Hersteller', suggest: ['Hörmann', 'Hotz', 'Novoferm', 'Teckentrup', 'Tousek'] },
+        { key: 'abmessung', label: 'Panzer Abmess. (B×H m)', inputmode: 'decimal', half: true },
         { key: 'gewicht', label: 'Gewicht', unit: 'kg', inputmode: 'decimal', half: true },
       ],
     },
     {
       id: 'antrieb', title: 'Antrieb', scope: 'gate', fields: [
-        { key: 'antriebHersteller', label: 'Hersteller', half: true },
+        // Papier: Hersteller · Typ + Leistung · Antriebsdrehzahl · Betriebsspannung + Steuerspannung
+        { key: 'antriebHersteller', label: 'Hersteller' },
         { key: 'antriebTyp', label: 'Typ', half: true },
         { key: 'leistung', label: 'Leistung', unit: 'kW', inputmode: 'decimal', half: true },
-        { key: 'drehzahl', label: 'Antriebsdrehzahl', inputmode: 'numeric', half: true },
+        { key: 'drehzahl', label: 'Antriebsdrehzahl', inputmode: 'numeric' },
         { key: 'spannung', label: 'Betriebsspannung', unit: 'V', inputmode: 'numeric', half: true, suggest: ['230', '400'] },
         { key: 'steuerspannung', label: 'Steuerspannung', unit: 'V', inputmode: 'numeric', half: true, suggest: ['24'] },
       ],
@@ -56,7 +58,8 @@ export const TEMPLATE_TORE = {
     {
       id: 'fang', title: 'Sicherung gegen Abstürzen des Panzers', scope: 'gate', optional: true, fields: [
         { key: 'fangArt', label: 'Art der Fangvorrichtung', suggest: ['Sperrklinke', 'Fangvorrichtung', 'Federbruchsicherung'] },
-        { key: 'fangHersteller', label: 'Hersteller', half: true },
+        // Papier: Art · Hersteller · Typ + Prüf-Nr. · Fangkraft + Fangmoment
+        { key: 'fangHersteller', label: 'Hersteller' },
         { key: 'fangTyp', label: 'Typ', half: true },
         { key: 'fangPruefNr', label: 'Prüf-Nr.', half: true },
         { key: 'fangkraft', label: 'Fangkraft', unit: 'N', inputmode: 'numeric', half: true },

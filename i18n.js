@@ -36,7 +36,7 @@ const EN = {
   // Kopf / Stammdaten
   'Stammdaten': 'Basic data', 'Kunde': 'Customer', 'Objekt': 'Site', 'Objekt (Bezeichnung)': 'Site (name)', 'Zusatz (z. B. c/o Hausverwaltung)': 'Addition (e.g. c/o property management)',
   'Straße, Nr.': 'Street, no.', 'PLZ Ort': 'Postcode, city', 'Standort / Lage': 'Location', 'Typ': 'Type', 'Fabr.-Nr.': 'Serial no.', 'Baujahr': 'Year built',
-  'Hersteller': 'Manufacturer', 'Panzer Abmess. (B x H in m)': 'Curtain size (W x H in m)', 'Gewicht': 'Weight', 'Antrieb': 'Drive', 'Leistung': 'Power',
+  'Hersteller': 'Manufacturer', 'Panzer Abmess. (B×H m)': 'Curtain size (W×H m)', 'Gewicht': 'Weight', 'Antrieb': 'Drive', 'Leistung': 'Power',
   'Antriebsdrehzahl': 'Drive speed', 'Betriebsspannung': 'Operating voltage', 'Steuerspannung': 'Control voltage',
   'Sicherung gegen Abstürzen des Panzers': 'Fall protection for the curtain', 'Art der Fangvorrichtung': 'Type of safety catch', 'Sperrklinke': 'Pawl',
   'Fangvorrichtung': 'Safety catch', 'Federbruchsicherung': 'Spring break protection', 'Prüf-Nr.': 'Test no.', 'Fangkraft': 'Catch force', 'Fangmoment': 'Catch torque',

@@ -17,13 +17,13 @@ export const TEMPLATE_TUER = {
   unit: { group: 'tuer', noun: 'Tür', standort: 'standort', typ: 'typ', nr: 'tuerNr', nrLabel: 'Tür-Nr.' },
 
   header: [
-    kunde,
     objekt,
+    kunde,
     {
       id: 'tuer', title: 'Tür', scope: 'gate', fields: [
-        { key: 'standort', label: 'Standort / Lage', required: true, hint: 'z. B. 1. OG Treppenhaus Nord' },
+        // Papier: Tür-Nr. (neben dem Kunden) · Standort/Lage · dann die Ankreuz-Zeilen
         { key: 'tuerNr', label: 'Tür-Nr.', half: true },
-        { key: 'fluegel', label: 'Anzahl der Flügel', inputmode: 'numeric', half: true, suggest: ['1', '2'] },
+        { key: 'standort', label: 'Standort / Lage', required: true, hint: 'z. B. 1. OG Treppenhaus Nord' },
         { key: 'art', label: 'Art der Prüfung', type: 'choice', options: ['Inbetriebnahme', 'Abnahme', 'Wartung'], perInspection: true },
         { key: 'bauart', label: 'Bauart', type: 'choice', options: ['Rohrrahmen-Türen', 'Stahlblechtüren', 'Holztür'] },
         { key: 'funktion', label: 'Funktion', type: 'choice', options: ['Brandschutztür', 'Rauchschutztür', 'Kombiniert RS/BS'] },
@@ -33,10 +33,12 @@ export const TEMPLATE_TUER = {
     },
     {
       id: 'grund', title: 'Grunddaten Tür', scope: 'gate', fields: [
-        { key: 'typ', label: 'Typ', hint: 'z. B. T30-2 WT' },
+        // Papier: Hersteller · Fabr.-Nr. · Typ · Baujahr + Anzahl d. Flügel
         { key: 'hersteller', label: 'Hersteller', half: true, suggest: ['Hörmann', 'Novoferm', 'Teckentrup', 'Schörghuber'] },
         { key: 'fabrNr', label: 'Fabr.-Nr.', half: true },
+        { key: 'typ', label: 'Typ', hint: 'z. B. T30-2 WT' },
         { key: 'bj', label: 'Baujahr', inputmode: 'numeric', half: true },
+        { key: 'fluegel', label: 'Anzahl der Flügel', inputmode: 'numeric', half: true, suggest: ['1', '2'] },
       ],
     },
   ],

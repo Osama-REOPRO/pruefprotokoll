@@ -268,7 +268,7 @@ kbd { display: inline-block; min-width: 1.6em; padding: 1px 5px; border: 1px sol
   .chip { min-height: 32px; }
   .chips.opt .chip { min-height: 34px; min-width: 56px; }
   .grid { gap: 10px 14px; }
-  .fld.half { width: calc(33.33% - 10px); }
+  .fld.half { width: calc(50% - 7px); }
   .toggle { min-height: 40px; } .toggle input { width: 20px; height: 20px; }
 
   /* Prüfschritte: Abschnittsliste links, Inhalt rechts */
