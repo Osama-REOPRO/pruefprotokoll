@@ -137,9 +137,9 @@ html.desk .empty { padding: 20px 0; }
 html.desk .eyebrow { font-size: .72em; }
 
 /* Formulare: Beschriftung links neben dem Feld, Gruppen nebeneinander */
-html.desk main.step:has(.form-group) { display: grid; grid-template-columns: repeat(auto-fill, minmax(440px, 1fr)); gap: 12px; align-items: start; }
-html.desk main.step:has(.form-group) > :not(.form-group) { grid-column: 1 / -1; }
-html.desk main.step:has(.form-group) > .form-group { margin: 0; }
+html.desk :is(main.step:not(.dk-all), .dk-sec):has(.form-group) { display: grid; grid-template-columns: repeat(auto-fill, minmax(440px, 1fr)); gap: 12px; align-items: start; }
+html.desk :is(main.step:not(.dk-all), .dk-sec):has(.form-group) > :not(.form-group) { grid-column: 1 / -1; }
+html.desk :is(main.step:not(.dk-all), .dk-sec):has(.form-group) > .form-group { margin: 0; }
 html.desk .form-group .grid { display: grid; grid-template-columns: 1fr 1fr; gap: 6px 14px; }
 html.desk .form-group .fld { display: grid; grid-template-columns: 118px 1fr; align-items: center; gap: 2px 8px; grid-column: 1 / -1; width: auto; }
 html.desk .form-group .fld.half { grid-column: auto; grid-template-columns: 118px 1fr; }
@@ -228,15 +228,15 @@ html.desk .gtoc-side { left: var(--nav-w); top: 44px; width: 240px; background: 
 html.desk .guide.has-toc { margin-left: 240px; max-width: 900px; }
 html.desk .gdoc { border-radius: 8px; }
 html.desk .bar-title br { display: none; }
-html.desk main.step:has(.form-group) > .big-btn { justify-self: start; }
-html.desk main.step:has(.form-group) > section.card:first-child:not(.form-group) .fld { max-width: 320px; }
-html.desk main.step > .big-btn + .big-btn { margin-left: 0; }
+html.desk :is(main.step:not(.dk-all), .dk-sec):has(.form-group) > .big-btn { justify-self: start; }
+html.desk :is(main.step:not(.dk-all), .dk-sec):has(.form-group) > section.card:first-child:not(.form-group) .fld { max-width: 320px; }
+html.desk :is(main.step:not(.dk-all), .dk-sec) > .big-btn + .big-btn { margin-left: 0; }
 /* Abschluss in zwei Spalten: Unterschriften nebeneinander */
-html.desk main.step:has(.summary) { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; align-items: start; }
-html.desk main.step:has(.summary) > * { grid-column: 1 / -1; margin: 0; }
-html.desk main.step:has(.summary) > section.card:has(canvas.sig) { grid-column: auto; }
-html.desk main.step:has(.summary) > .big-btn { justify-self: start; }
-html.desk main.step:has(.summary) > .disclaimer { font-size: .85em; }
+html.desk :is(main.step:not(.dk-all), .dk-sec):has(.summary) { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; align-items: start; }
+html.desk :is(main.step:not(.dk-all), .dk-sec):has(.summary) > * { grid-column: 1 / -1; margin: 0; }
+html.desk :is(main.step:not(.dk-all), .dk-sec):has(.summary) > section.card:has(canvas.sig) { grid-column: auto; }
+html.desk :is(main.step:not(.dk-all), .dk-sec):has(.summary) > .big-btn { justify-self: start; }
+html.desk :is(main.step:not(.dk-all), .dk-sec):has(.summary) > .disclaimer { font-size: .85em; }
 html.desk .summary .tiles { display: flex; }
 html.desk .summary .tile { flex: 1; padding: 6px 8px; flex-direction: row; justify-content: center; gap: 8px; align-items: baseline; }
 html.desk .summary .tile b { font-size: 1.3em; }
@@ -246,4 +246,12 @@ html.desk .defects { margin: 0 0 8px; padding-left: 1.3em; }
 .dn-foot { flex-wrap: wrap; gap: 3px; } .dn-foot .tb-btn.sm { padding: 0 6px; font-size: .84em; } .dn-foot { flex-wrap: nowrap; }
 .dn-foot .tb-btn.on { background: color-mix(in srgb, var(--brand) 13%, var(--card)); color: var(--brand); border-color: color-mix(in srgb, var(--brand) 40%, var(--line)); }
 html.desk .sec-title { font-size: 1.5em; margin: 2px 0 10px; }
-html.desk main.step:has(.form-group) > .sec-title, html.desk main.step:has(.summary) > .sec-title { grid-column: 1 / -1; margin-bottom: 0; }
+html.desk :is(main.step:not(.dk-all), .dk-sec):has(.form-group) > .sec-title, html.desk :is(main.step:not(.dk-all), .dk-sec):has(.summary) > .sec-title { grid-column: 1 / -1; margin-bottom: 0; }
+
+/* Eine durchgehende Seite: alle Abschnitte untereinander */
+html.desk main.dk-all { padding-bottom: 60vh; }
+html.desk .dk-sec { padding-bottom: 22px; margin-bottom: 22px; border-bottom: 1px solid var(--line); scroll-margin-top: 56px; }
+html.desk .dk-sec:last-child { border-bottom: 0; }
+html.desk .dk-sec > .sec-title { margin-top: 4px; }
+html.desk .dk-finish-nav { grid-column: 1 / -1; display: flex; flex-wrap: wrap; gap: 8px; }
+html.desk .dk-finish-nav .nav-btn { height: 36px; min-height: 36px; padding: 0 20px; }

@@ -118,14 +118,82 @@ function snack(text) {
 // Rückgängig erscheint genau dort, wo der Sammel-Knopf war, und verdeckt nichts
 let undoTimer = null;
 function undoInline(text, undoFn) {
-  const tools = document.querySelector('.sec-tools');
+  const tools = (DESK && document.querySelector(`#sec-${step} .sec-tools`)) || document.querySelector('.sec-tools');
   if (!tools) return;
   tools.innerHTML = `<div class="undo-bar"><span>${esc(text)}</span><button data-act="undo">↶ Rückgängig</button></div>`;
   undoState = undoFn;
   clearTimeout(undoTimer);
   undoTimer = setTimeout(() => { undoState = null; if (document.querySelector('.undo-bar')) renderStepKeepScroll(); }, 6000);
 }
-function renderStepKeepScroll() { const y = window.scrollY; renderStep(); window.scrollTo(0, y); }
+function renderStepKeepScroll() { const y = window.scrollY; if (DESK) renderAllDesk(null); else renderStep(); window.scrollTo(0, y); }
+
+// ---------- Desktop: alle Abschnitte einer Prüfung auf einer Seite ----------
+// Die einzelnen Schritte werden wie auf dem Handy erzeugt, hier aber gesammelt und untereinander gezeigt.
+let COLLECT = null, deskShown = null;
+function paint(html) {
+  if (!COLLECT) { $app.innerHTML = html; return false; }
+  let body = (html.match(/<main class="step">([\s\S]*)<\/main>/) || [])[1] || '';
+  const nav = html.match(/<nav class="bottom">([\s\S]*)<\/nav>/);
+  if (step === stepCount() - 1 && nav) body += `<div class="dk-finish-nav">${nav[1].replace(/<button class="nav-btn" data-act="prev">[^<]*<\/button>/, '')}</div>`;
+  COLLECT.push(`<section class="dk-sec" id="sec-${step}" data-step="${step}">${body}</section>`);
+  return true;
+}
+function renderAllDesk(target) {
+  const keep = step;
+  COLLECT = [];
+  try { for (let i = 0; i < stepCount(); i++) { step = i; renderStep(); } }
+  finally { var parts = COLLECT; COLLECT = null; step = keep; }
+  $app.innerHTML = `${topBar()}<main class="step dk-all">${parts.join('')}</main>`;
+  deskShown = insp.id;
+  hydrateThumbs(); initSigPad('ag'); initSigPad('an');
+  kbIdx = -1;
+  refreshChrome();
+  if (target != null) scrollToSec(target);
+}
+function scrollToSec(i) {
+  const el = document.getElementById('sec-' + i);
+  if (!el) return;
+  spyLock = Date.now();
+  window.scrollTo(0, i === 0 ? 0 : el.getBoundingClientRect().top + window.scrollY - 56);
+  markSide(i);
+  kbToSec(i);
+}
+// Tastatur-Auswahl in den Abschnitt mitnehmen (ohne zu scrollen)
+function kbToSec(i) {
+  const rows = kbRows(), cur = rows[kbIdx];
+  if (cur && cur.closest('.dk-sec')?.dataset.step == i) return;
+  const first = document.querySelector(`#sec-${i} .row`);
+  rows.forEach(r => r.classList.remove('kb-cur'));
+  kbIdx = first ? rows.indexOf(first) : -1;
+  if (first) first.classList.add('kb-cur');
+}
+function markSide(i) {
+  document.querySelectorAll('.side-step').forEach(b => b.classList.toggle('cur', +b.dataset.step === i));
+}
+// Beim Scrollen: Abschnitt links markieren und Adresse mitführen (ohne neu aufzubauen)
+let spyLock = 0, spyRaf = 0;
+window.addEventListener('scroll', () => {
+  if (!DESK || spyRaf || !insp || !document.querySelector('main.dk-all')) return;
+  spyRaf = requestAnimationFrame(() => {
+    spyRaf = 0;
+    if (Date.now() - spyLock < 150) return;
+    let cur = 0;
+    const atEnd = window.innerHeight + window.scrollY >= document.documentElement.scrollHeight - 4;
+    document.querySelectorAll('.dk-sec').forEach(el => { if (el.getBoundingClientRect().top <= 140) cur = +el.dataset.step; });
+    if (atEnd) cur = Math.max(cur, stepCount() - 1);
+    if (cur === step) return;
+    spySet(cur);
+    const r = kbRows()[kbIdx]?.getBoundingClientRect();
+    if (!r || r.bottom < 0 || r.top > innerHeight) kbToSec(cur);
+  });
+}, { passive: true });
+function spySet(cur) {
+  if (cur === step) return;
+  step = cur; markSide(cur);
+  const h = `#/p/${insp.id}/${cur}`;
+  history.replaceState(null, '', h); lastHash = h;
+  settings.set('last', { id: insp.id, step: cur, at: Date.now() });
+}
 
 // ---------- Routing ----------
 let lastHash = '';
@@ -356,13 +424,13 @@ function sideSteps() {
   <button class="side-help" data-act="keys">⌨ Tastenkürzel <kbd>?</kbd></button></aside>`;
 }
 // Abschnittsname groß direkt über den Prüfpunkten (nicht nur klein in der Kopfzeile)
-function secTitle() {
+function secTitle(i = step) {
   let count = '';
-  if (step > 0 && step < stepCount() - 1) {
-    const items = tpl.sections[step - 1].items.filter(isCheck);
+  if (i > 0 && i < stepCount() - 1) {
+    const items = tpl.sections[i - 1].items.filter(isCheck);
     if (items.length) count = `${items.filter(it => insp.answers[it.id]?.s).length}/${items.length}`;
   }
-  return `<h1 class="sec-title"><span class="sec-n">${step + 1} / ${stepCount()}</span> ${esc(stepTitle(step))}${count ? ` <span class="sec-c">${count}</span>` : ''}</h1>`;
+  return `<h1 class="sec-title"><span class="sec-n">${i + 1} / ${stepCount()}</span> ${esc(stepTitle(i))}${count ? ` <span class="sec-c">${count}</span>` : ''}</h1>`;
 }
 function topBar() {
   const n = stepCount();
@@ -391,23 +459,29 @@ function refreshChrome() {
   if (segs) segs.outerHTML = `<div class="segs" data-act="jump">${Array.from({ length: stepCount() }, (_, i) => `<span class="seg st-${stepStatus(i)} ${i === step ? 'cur' : ''}"></span>`).join('')}</div>`;
   const side = document.querySelector('.side-steps');
   if (side) side.outerHTML = sideSteps();
-  const st = document.querySelector('.sec-title');
-  if (st) st.outerHTML = secTitle();
+  if (DESK) document.querySelectorAll('.dk-sec').forEach(el => { const t = el.querySelector('.sec-title'); if (t) t.outerHTML = secTitle(+el.dataset.step); });
+  else { const st = document.querySelector('.sec-title'); if (st) st.outerHTML = secTitle(); }
   const nb = document.querySelector('.nav-btn.next');
-  if (nb && step > 0 && step < stepCount() - 1) {
+  if (!DESK && nb && step > 0 && step < stepCount() - 1) {
     const open = tpl.sections[step - 1].items.filter(isCheck).filter(it => !insp.answers[it.id]?.s).length;
     nb.textContent = 'Weiter ›';
   }
-  if (step > 0 && step < stepCount() - 1) {
-    const untouched = tpl.sections[step - 1].items.filter(isCheck).filter(it => !insp.answers[it.id]?.s);
-    const ok = document.querySelector('[data-act="allOk"]');
+  const tools = (i, root) => {
+    const untouched = tpl.sections[i - 1].items.filter(isCheck).filter(it => !insp.answers[it.id]?.s);
+    const ok = root.querySelector('[data-act="allOk"]');
     if (ok) ok.disabled = !untouched.length;
-    const last = document.querySelector('[data-act="asLast"]');
+    const last = root.querySelector('[data-act="asLast"]');
     if (last) last.disabled = !untouched.some(it => insp.prev?.[it.id]?.s);
-  }
+  };
+  if (DESK) document.querySelectorAll('.dk-sec').forEach(el => { const i = +el.dataset.step; if (i > 0 && i < stepCount() - 1) tools(i, el); });
+  else if (step > 0 && step < stepCount() - 1) tools(step, document);
 }
 
 function renderStep() {
+  if (DESK && !COLLECT) {
+    if (deskShown === insp.id && document.querySelector('main.dk-all')) return scrollToSec(step);
+    return renderAllDesk(step);
+  }
   if (step === 0) return renderHeader();
   if (step === stepCount() - 1) return renderFinish();
   return renderSection(tpl.sections[step - 1]);
@@ -441,7 +515,7 @@ function renderHeader() {
     </section>`;
   }).join('');
 
-  $app.innerHTML = `${topBar()}
+  if (paint(`${topBar()}
     <main class="step">
       ${secTitle()}
       ${insp.prev ? `<section class="card copy-last">
@@ -452,7 +526,7 @@ function renderHeader() {
       ${insp.visitId ? `<button class="hint pair-line" data-act="movePairAsk" data-id="${insp.id}"><span>Kunde und Objekt kommen vom Termin:</span> <b>${esc(pairLabel({ objekt: insp.header.objekt, kunde: insp.header.kunde }))}</b> <span class="link-ish">ändern ›</span></button>` : ''}
       ${groups}
     </main>
-    ${bottomBar('Zur Prüfung ›', 'ready')}`;
+    ${bottomBar('Zur Prüfung ›', 'ready')}`)) return;
 }
 
 // ---------- Prüfabschnitt ----------
@@ -540,7 +614,7 @@ function renderSection(sec) {
   const t = unitOf(insp);
   const first = step === 1;
   const nothingYet = !Object.values(insp.answers).some(a => a.s);
-  const summary = first ? `
+  const summary = first && !DESK ? `
     <button class="gate-sum" data-act="goto" data-step="0">
       <span><b>${esc(t.standort || `${t.noun} ohne Standort`)}</b><br><span class="muted small">${esc(t.noun)}${unitSub(t) ? ' · ' + esc(unitSub(t)) : ' · Daten eintragen'}</span></span>
       <span class="small link-ish">Daten ›</span>
@@ -548,18 +622,18 @@ function renderSection(sec) {
     ${insp.prev && nothingYet ? `<section class="card copy-last">
       <p><b>Nichts geändert seit ${esc(insp.prevDatum || 'letztem Mal')}?</b></p>
       <button class="big-btn primary" data-act="copyAll">↺ Alles wie letztes Mal</button></section>` : ''}` : '';
-  $app.innerHTML = `${topBar()}
+  if (paint(`${topBar()}
     <main class="step">
       ${summary}
       ${secTitle()}
       <div class="sec-tools">
-        ${insp.prev ? `<button class="tool prev" data-act="asLast" ${prevAvail ? '' : 'disabled'}>↺ Wie letztes Mal</button>` : ''}
-        <button class="tool ok" data-act="allOk" ${untouched.length ? '' : 'disabled'}>✓ Rest o.B.</button>
+        ${insp.prev ? `<button class="tool prev" data-act="asLast" data-step="${step}" ${prevAvail ? '' : 'disabled'}>↺ Wie letztes Mal</button>` : ''}
+        <button class="tool ok" data-act="allOk" data-step="${step}" ${untouched.length ? '' : 'disabled'}>✓ Rest o.B.</button>
       </div>
       ${DESK ? `<div class="dhead"><span>Prüfpunkt</span><span>${(tpl.states || ['ok', 'b']).map(v => STATE_BTN[v][2]).join(' · ')}</span><span>Notiz (steht neben dem Kästchen)</span></div>` : ''}
       ${sec.items.map(rowHTML).join('')}
     </main>
-    ${bottomBar('Weiter ›')}`;
+    ${bottomBar('Weiter ›')}`)) return;
   hydrateThumbs();
   kbIdx = -1;
 }
@@ -629,13 +703,14 @@ async function addPhoto(itemId, file) {
 
 // ---------- Abschluss ----------
 function renderFinish() {
+  if (DESK && !COLLECT) return renderStepKeepScroll();
   const st = stats();
   const defects = allItems().filter(it => insp.answers[it.id]?.s === 'b');
   if (!insp.ort) insp.ort = (insp.header.objekt?.plzOrt || '').replace(/^\s*\d{5}\s*/, '');
   const openSecs = tpl.sections.map((s, i) => ({ s, i, n: s.items.filter(it => !insp.answers[it.id]?.s).length })).filter(x => x.n);
   const savedSig = settings.get('techSig', null);
 
-  $app.innerHTML = `${topBar()}
+  if (paint(`${topBar()}
     <main class="step">
       ${secTitle()}
       <section class="card summary">
@@ -694,7 +769,7 @@ function renderFinish() {
       ${insp.status === 'done'
         ? (insp.visitId ? `<button class="nav-btn next ready" data-act="nextInVisit">Nächstes ›</button>` : `<button class="nav-btn next ready" data-act="nextGate">＋ Nächstes Tor hier</button>`)
         : `<button class="nav-btn next ready" data-act="finish">Abschließen ✓</button>`}
-    </nav>`;
+    </nav>`)) return;
   initSigPad('ag'); initSigPad('an');
   saveSoon();
 }
@@ -1093,7 +1168,7 @@ async function movePair(inspId, pairId) {
   const v = ensurePairs(await db.get('visits', i.visitId)); const p = pairById(v, pairId); if (!p) return;
   Object.assign(i, { pairId: p.id, customerId: p.customerId, siteId: p.siteId });
   i.header.kunde = structuredClone(p.kunde); i.header.objekt = structuredClone(p.objekt);
-  if (insp?.id === i.id) { await saveNow(); renderStep(); } else { await db.put('inspections', i); if (visit) renderVisit(); }
+  if (insp?.id === i.id) { await saveNow(); renderStepKeepScroll(); } else { await db.put('inspections', i); if (visit) renderVisit(); }
   snack(`Zugeordnet: ${pairLabel(p)}`);
 }
 
@@ -1360,8 +1435,8 @@ document.addEventListener('click', async (e) => {
     case 'prev': return go(step - 1);
     case 'next': window.scrollTo(0, 0); return go(step + 1);
     case 'set': return setAnswer(b.dataset.id, b.dataset.v);
-    case 'allOk': return bulk(tpl.sections[step - 1], 'ok');
-    case 'asLast': return bulk(tpl.sections[step - 1], 'last');
+    case 'allOk': if (b.dataset.step) step = +b.dataset.step; return bulk(tpl.sections[step - 1], 'ok');
+    case 'asLast': if (b.dataset.step) step = +b.dataset.step; return bulk(tpl.sections[step - 1], 'last');
     case 'delPhoto': {
       const a = insp.answers[b.dataset.id];
       a.photos = (a.photos || []).filter(x => x !== b.dataset.pid);
@@ -1481,7 +1556,15 @@ document.addEventListener('input', (e) => {
   if (!insp && visit && t.dataset.vh) { const [g, k] = t.dataset.vh.split('.'); const P = editPair(ensurePairs(visit)); (P[g] ||= {})[k] = t.value; refreshPairChip(); return saveVisitSoon(); }
   if (!insp && visit && t.dataset.vf) { visit[t.dataset.vf] = t.value; return saveVisitSoon(); }
   if (!insp) return;
-  if (t.dataset.h) { const [g, k] = t.dataset.h.split('.'); (insp.header[g] ||= {})[k] = t.value; return saveSoon(); }
+  if (t.dataset.h) {
+    const [g, k] = t.dataset.h.split('.'); (insp.header[g] ||= {})[k] = t.value;
+    if (DESK) { // Titel oben und links mitführen, die Seite wird nicht neu aufgebaut
+      const u = unitOf(insp), bt = document.querySelector('.bar .bar-title .t'), nt = document.querySelector('.dn-title b');
+      if (bt?.firstChild) bt.firstChild.textContent = `${u.standort || u.noun} `;
+      if (nt) nt.textContent = u.standort || `${u.noun} ohne Standort`;
+    }
+    return saveSoon();
+  }
   if (t.dataset.note) { (insp.answers[t.dataset.note] ||= {}).note = t.value; return saveSoon(); }
   if (t.dataset.x) { (insp.answers[t.dataset.x] ||= {}).x = t.value; return saveSoon(); }
   if (t.dataset.f) { insp[t.dataset.f] = t.type === 'checkbox' ? t.checked : t.value; return saveSoon(); }
@@ -1520,6 +1603,8 @@ function kbSelect(i, scroll = true) {
   kbIdx = Math.max(0, Math.min(rows.length - 1, i));
   rows.forEach((r, j) => r.classList.toggle('kb-cur', j === kbIdx));
   if (scroll) rows[kbIdx].scrollIntoView({ block: 'center', behavior: 'smooth' });
+  const sec = DESK && rows[kbIdx].closest('.dk-sec');
+  if (sec) { if (scroll) spyLock = Date.now() + 800; spySet(+sec.dataset.step); }
 }
 function kbCurId() { return kbRows()[kbIdx]?.id?.replace(/^r-/, ''); }
 document.addEventListener('keydown', (e) => {
@@ -1539,8 +1624,15 @@ document.addEventListener('keydown', (e) => {
   if (k === '?') { e.preventDefault(); return openKeys(); }
   if (k === 'h' && !isGuide(location.hash)) { e.preventDefault(); return (location.hash = '#/handbuch'); }
   if (!insp || !tpl) return;
-  const inSection = step > 0 && step < stepCount() - 1;
+  const all = DESK && document.querySelector('main.dk-all');
+  const inSection = all || (step > 0 && step < stepCount() - 1);
   const click = (sel) => { const el = document.querySelector(sel); if (el && !el.disabled) { el.click(); return true; } return false; };
+  if (all) {
+    if (k === 'ArrowRight') { e.preventDefault(); return go(Math.min(stepCount() - 1, step + 1)); }
+    if (k === 'ArrowLeft') { e.preventDefault(); return go(Math.max(0, step - 1)); }
+    const sec = kbRows()[kbIdx]?.closest('.dk-sec') || document.getElementById(`sec-${step}`);
+    if (k === 'a' || k === 'l') { e.preventDefault(); const b = sec?.querySelector(`[data-act=${k === 'a' ? 'allOk' : 'asLast'}]`); if (b && !b.disabled) b.click(); return; }
+  }
   if (k === 'ArrowRight') { e.preventDefault(); return click('.bottom [data-act=next], .bottom [data-act=finish], .bottom [data-act=nextInVisit], .bottom [data-act=nextGate]'); }
   if (k === 'ArrowLeft') { e.preventDefault(); return click('.bottom [data-act=prev]'); }
   if (k === 'p') { e.preventDefault(); saveNow(); return (location.hash = `#/druck/${insp.id}`); }
