@@ -25,7 +25,7 @@ const deskMQ = matchMedia('(min-width: 1000px) and (hover: hover) and (pointer: 
 let DESK = false;
 function applyDesk() { DESK = deskMQ.matches; document.documentElement.classList.toggle('desk', DESK); if (!DESK) document.getElementById('dknav').innerHTML = ''; }
 applyDesk();
-deskMQ.addEventListener('change', () => { applyDesk(); route(); });
+deskMQ.addEventListener('change', () => { if (matchMedia('print').matches) return; applyDesk(); route(); }); // beim Drucken nicht umbauen
 
 // ---------- kleine Helfer ----------
 const esc = (s) => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));

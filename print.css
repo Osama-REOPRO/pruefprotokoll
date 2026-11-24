@@ -90,8 +90,12 @@
 @media print {
   html, body { background: #fff !important; }
   .print-bar, .print-hint, .bottom, #snack, #sheet { display: none !important; }
-  .print-stage { padding: 0; overflow: visible; }
-  .print-scale { transform: none !important; height: auto !important; }
+  /* Desktop: Seitenleiste und ihr Platz gehören nicht aufs Papier */
+  #dknav, .gtoc-side { display: none !important; }
+  html.desk body, body { padding: 0 !important; margin: 0 !important; }
+  html.desk #app { margin: 0 !important; padding: 0 !important; max-width: none !important; }
+  .print-stage { padding: 0; overflow: visible; height: auto !important; }
+  .print-scale { transform: none !important; height: auto !important; margin: 0 !important; width: auto !important; }
   .ppage { margin: 0; box-shadow: none; break-after: page; }
   .ppage:last-child { break-after: auto; }
   * { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
