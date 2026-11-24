@@ -342,3 +342,9 @@ html.desk .gdoc { padding: 6px 28px 24px; }
 /* Termin senden / empfangen */
 label.big-btn { display: flex; align-items: center; justify-content: center; text-align: center; cursor: pointer; }
 .recv-btn { margin-top: 10px; border-style: dashed; font-weight: 600; }
+
+/* Abschnittsname groß über den Prüfpunkten */
+.sec-title { margin: 4px 2px 12px; font-size: 1.45em; line-height: 1.2; font-weight: 800; display: flex; align-items: baseline; gap: 8px; flex-wrap: wrap; }
+.sec-title .sec-n { font-size: .55em; font-weight: 700; color: var(--muted); order: -1; flex-basis: 100%; letter-spacing: .03em; }
+.sec-title .sec-c { font-size: .6em; font-weight: 700; color: var(--muted); background: var(--na-bg); padding: 1px 8px; border-radius: 99px; }
+.gate-sum + .sec-title, .copy-last + .sec-title { margin-top: 14px; }

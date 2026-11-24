@@ -355,6 +355,15 @@ function sideSteps() {
   }).join('')}
   <button class="side-help" data-act="keys">⌨ Tastenkürzel <kbd>?</kbd></button></aside>`;
 }
+// Abschnittsname groß direkt über den Prüfpunkten (nicht nur klein in der Kopfzeile)
+function secTitle() {
+  let count = '';
+  if (step > 0 && step < stepCount() - 1) {
+    const items = tpl.sections[step - 1].items.filter(isCheck);
+    if (items.length) count = `${items.filter(it => insp.answers[it.id]?.s).length}/${items.length}`;
+  }
+  return `<h1 class="sec-title"><span class="sec-n">${step + 1} / ${stepCount()}</span> ${esc(stepTitle(step))}${count ? ` <span class="sec-c">${count}</span>` : ''}</h1>`;
+}
 function topBar() {
   const n = stepCount();
   const segs = Array.from({ length: n }, (_, i) => `<span class="seg st-${stepStatus(i)} ${i === step ? 'cur' : ''}"></span>`).join('');
@@ -362,8 +371,8 @@ function topBar() {
     <header class="bar">
       <button class="icon-btn" data-act="home" aria-label="Zur Übersicht">✕</button>
       <button class="bar-title as-btn" data-act="jump">
-        <span class="small muted">${step + 1} / ${n} · ${esc(inspTitle(insp))}</span>
-        <span class="t">${esc(stepTitle(step))} <span class="caret">▾</span></span>
+        <span class="small muted">${esc(inspTitle(insp))}</span>
+        <span class="t">${esc(unitOf(insp).standort || unitOf(insp).noun)} <span class="caret">▾</span></span>
       </button>
       <span id="saved" class="saved ok">✓ gespeichert</span>
       <button class="icon-btn" data-act="menu" data-for="insp" data-id="${insp.id}" aria-label="Mehr">⋯</button>
@@ -382,6 +391,8 @@ function refreshChrome() {
   if (segs) segs.outerHTML = `<div class="segs" data-act="jump">${Array.from({ length: stepCount() }, (_, i) => `<span class="seg st-${stepStatus(i)} ${i === step ? 'cur' : ''}"></span>`).join('')}</div>`;
   const side = document.querySelector('.side-steps');
   if (side) side.outerHTML = sideSteps();
+  const st = document.querySelector('.sec-title');
+  if (st) st.outerHTML = secTitle();
   const nb = document.querySelector('.nav-btn.next');
   if (nb && step > 0 && step < stepCount() - 1) {
     const open = tpl.sections[step - 1].items.filter(isCheck).filter(it => !insp.answers[it.id]?.s).length;
@@ -432,6 +443,7 @@ function renderHeader() {
 
   $app.innerHTML = `${topBar()}
     <main class="step">
+      ${secTitle()}
       ${insp.prev ? `<section class="card copy-last">
           <p><b>Nichts geändert seit ${esc(insp.prevDatum || 'letztem Mal')}?</b><br>Alle Häkchen, Angaben und Mängelbeschreibungen übernehmen und direkt zum Abschluss.</p>
           <button class="big-btn primary" data-act="copyAll">↺ Alles wie letztes Mal</button>
@@ -539,6 +551,7 @@ function renderSection(sec) {
   $app.innerHTML = `${topBar()}
     <main class="step">
       ${summary}
+      ${secTitle()}
       <div class="sec-tools">
         ${insp.prev ? `<button class="tool prev" data-act="asLast" ${prevAvail ? '' : 'disabled'}>↺ Wie letztes Mal</button>` : ''}
         <button class="tool ok" data-act="allOk" ${untouched.length ? '' : 'disabled'}>✓ Rest o.B.</button>
@@ -624,6 +637,7 @@ function renderFinish() {
 
   $app.innerHTML = `${topBar()}
     <main class="step">
+      ${secTitle()}
       <section class="card summary">
         <div class="tiles ${tpl.states?.includes('nv') ? 'four' : ''}">
           <div class="tile green"><b>${st.ok}</b><span>o.B.</span></div>
