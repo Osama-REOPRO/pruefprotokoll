@@ -1,5 +1,5 @@
 // Druckansicht: "Abnahme- / Inbetriebnahme- & Prüfprotokoll" für Türen, wie das Papierformular.
-import { esc, box, mini, ink, pnote, printDefectLines } from './print-tore.js';
+import { esc, box, mini, ink, pnote, printDefectLines, shadeRows } from './print-tore.js';
 
 const SIG_AND_HEAD = {
   head: (title, angebot) => `
@@ -83,7 +83,7 @@ export function printTuer(insp, tpl, photos = []) {
       <div>${['Inbetriebnahme', 'Abnahme', 'Wartung'].map(x => opt(x, t.art === x)).join('')}</div>
       <div>${['Rohrrahmen-Türen', 'Stahlblechtüren', 'Holztür'].map(x => opt(x, t.bauart === x)).join('')}</div>
       <div>${['Brandschutztür', 'Rauchschutztür', 'Kombiniert RS/BS'].map(x => opt(x, t.funktion === x)).join('')}</div>
-      <div>${opt('T 30', t.klasse === 'T30')}${opt('T 90', t.klasse === 'T90')}<span class="popt">sonstige ${mini(t.klasse === 'sonstige')} ${t.klasse === 'sonstige' && t.klasseSonst ? ink(t.klasseSonst) : ''}</span></div>
+      <div>${opt('T 30', t.klasse === 'T30')}${opt('T 90', t.klasse === 'T90')}<span class="popt psonst">sonstige ${mini(t.klasse === 'sonstige')}<span class="pfill">${t.klasse === 'sonstige' && t.klasseSonst ? ink(t.klasseSonst) : ''}</span></span></div>
     </div>
     <div class="pgrund">
       <div class="pline pnone"><span class="plab blue b pul">Grunddaten Tür:</span></div>
@@ -100,9 +100,9 @@ export function printTuer(insp, tpl, photos = []) {
 
     <div class="pgrid">
       <div class="pleft"><table class="pchk p3">
-        ${left}</table></div>
+        ${shadeRows(left)}</table></div>
       <div class="pright">
-        <table class="pchk p3">${right}</table>
+        <table class="pchk p3">${shadeRows(right)}</table>
         <div class="prem">
           <div class="premh">Bemerkungen/ Festgestellte Mängel:</div>
           ${remarkRows.map(r => `<div class="premrow">${r ? ink(r) : ''}</div>`).join('')}

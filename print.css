@@ -56,7 +56,7 @@
 .pchk .ph th { color: #1f4e9c; font-weight: 700; text-align: center; background: #fff; border-top: .3mm solid #000; }
 .pchk .ph .pc { color: #000; }
 .pchk .ps th { color: #1f4e9c; font-weight: 500; text-align: center; }
-.pchk .pi:nth-of-type(odd) td { background: #d9d9d9; }
+.pchk .pi.pg td { background: #d9d9d9; }
 .pchk .pi.tall td { height: 8.2mm; line-height: 1.1; }
 .pchk .pf td { background: #fff !important; }
 .pl { font-size: 8.9pt; }
@@ -126,3 +126,5 @@
 .pnote { float: right; max-width: 58%; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; margin-left: 2mm; font-size: .92em; }
 .pline .plab.pul { text-decoration: underline; text-underline-offset: .6mm; }
 .ptuer .paddr { margin-bottom: 1.2mm; }
+.popt.psonst { display: flex; align-items: flex-end; gap: 1mm; }
+.psonst .pfill { flex: 1; min-width: 20mm; border-bottom: .2mm solid #000; height: 3.6mm; padding-left: 1mm; line-height: 1; }

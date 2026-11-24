@@ -79,8 +79,17 @@ export const ink = (v) => `<span class="ink">${esc(v)}</span>`;
 // Notiz im freien Platz rechts neben dem Text der Zeile, wie handschriftlich auf Papier
 export const pnote = (a) => a?.note ? `<span class="pnote ink">${esc(a.note)}</span>` : '';
 
+// Graue Zeilen wie auf Papier: die erste Zeile unter jeder (Unter-)Überschrift ist grau, dann abwechselnd
+export function shadeRows(html) {
+  let n = 0;
+  return html.replace(/<tr class="(p[hsit])\b/g, (m, k) => {
+    if (k !== 'pi') { n = 0; return m; }
+    return n++ % 2 === 0 ? `${m} pg` : m;
+  });
+}
+
 function checklist(rows, ans) {
-  return `<table class="pchk">${rows.map(([kind, text, id, withHead, opt]) => {
+  return shadeRows(`<table class="pchk">${rows.map(([kind, text, id, withHead, opt]) => {
     if (kind === 'h') return `<tr class="ph"><th>${esc(text)}</th><td class="pc">${withHead ? 'o. B.' : ''}</td><td class="pc">${withHead ? 'B.' : ''}</td></tr>`;
     if (kind === 's') return `<tr class="ps"><th>${esc(text)}</th><td class="pc"></td><td class="pc"></td></tr>`;
     const a = ans[id] || {};
@@ -94,7 +103,7 @@ function checklist(rows, ans) {
       label = `<b class="blue">${esc(text)}</b> ${a.x ? ink(a.x) : ''}`;
     }
     return `<tr class="pi ${kind === 'f' ? 'pf' : ''} ${opt === 'tall' ? 'tall' : ''}"><td class="pl">${pnote(a)}${label}</td><td class="pc">${box(a.s === 'ok')}</td><td class="pc">${box(a.s === 'b')}</td></tr>`;
-  }).join('')}</table>`;
+  }).join('')}</table>`);
 }
 
 export function line(label, value, unit = '', cls = '') {
