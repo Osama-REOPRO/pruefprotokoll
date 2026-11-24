@@ -83,6 +83,24 @@ function autoDone(i) {
   const st = tpl.sections[i - 1].items.filter(isCheck).map(it => insp.answers[it.id]?.s);
   return st.length > 0 && st.every(Boolean);
 }
+function secHasData(i) {
+  return isMarked(i) || tpl.sections[i - 1].items.some(it => { const a = insp.answers[it.id]; return a && (a.s || a.note || a.photos?.length || (a.x !== undefined && a.x !== '' && !(Array.isArray(a.x) && !a.x.length))); });
+}
+// Abschnitt leeren: Häkchen, Notizen, Fotos, Angaben und „✓ Geprüft“; mit Rückgängig
+function clearSection(i) {
+  const sec = tpl.sections[i - 1];
+  const before = Object.fromEntries(sec.items.map(it => [it.id, insp.answers[it.id]]).filter(([, a]) => a));
+  const wasMarked = isMarked(i);
+  for (const it of sec.items) delete insp.answers[it.id];
+  sec.items.forEach(it => openNotes.delete(it.id));
+  setMarked(i, false);
+  buzz(20); saveNow(); renderStepKeepScroll();
+  undoInline('Abschnitt geleert (Häkchen, Notizen, Fotos)', () => {
+    for (const [id, a] of Object.entries(before)) if (!insp.answers[id]) insp.answers[id] = a;
+    if (wasMarked) setMarked(i, true);
+    saveNow(); renderStepKeepScroll();
+  });
+}
 function setMarked(i, on) {
   insp.checked = { ...(insp.checked || {}) };
   if (on) insp.checked[secKey(i)] = true; else delete insp.checked[secKey(i)];
@@ -481,6 +499,8 @@ function refreshChrome() {
     const untouched = tpl.sections[i - 1].items.filter(isCheck).filter(it => !insp.answers[it.id]?.s);
     const ok = root.querySelector('[data-act="allOk"]');
     if (ok) ok.disabled = !untouched.length;
+    const clr = root.querySelector('[data-act="clearSec"]');
+    if (clr) clr.disabled = !secHasData(i);
     const last = root.querySelector('[data-act="asLast"]');
     if (last) last.disabled = !untouched.some(it => insp.prev?.[it.id]?.s);
   };
@@ -641,6 +661,7 @@ function renderSection(sec) {
       <div class="sec-tools">
         ${insp.prev ? `<button class="tool prev" data-act="asLast" data-step="${step}" ${prevAvail ? '' : 'disabled'}>↺ Wie letztes Mal</button>` : ''}
         <button class="tool ok" data-act="allOk" data-step="${step}" ${untouched.length ? '' : 'disabled'}>✓ Rest o.B.</button>
+        <button class="tool clr" data-act="clearSec" data-step="${step}" ${secHasData(step) ? '' : 'disabled'} title="Alle Häkchen, Notizen und Fotos dieses Abschnitts entfernen">⌫ Leeren</button>
       </div>
       ${DESK ? `<div class="dhead"><span>Prüfpunkt</span><span>${(tpl.states || ['ok', 'b']).map(v => STATE_BTN[v][2]).join(' · ')}</span><span>Notiz (steht neben dem Kästchen)</span></div>` : ''}
       ${sec.items.map(rowHTML).join('')}
@@ -1455,6 +1476,7 @@ document.addEventListener('click', async (e) => {
     case 'checkNext': if (!autoDone(step)) setMarked(step, true); saveNow(); window.scrollTo(0, 0); return go(step + 1);
     case 'secCheck': { const i = +b.dataset.step; setMarked(i, !isMarked(i)); buzz(15); saveNow(); return refreshChrome(); }
     case 'set': return setAnswer(b.dataset.id, b.dataset.v);
+    case 'clearSec': if (b.dataset.step) step = +b.dataset.step; return clearSection(step);
     case 'allOk': if (b.dataset.step) step = +b.dataset.step; return bulk(tpl.sections[step - 1], 'ok');
     case 'asLast': if (b.dataset.step) step = +b.dataset.step; return bulk(tpl.sections[step - 1], 'last');
     case 'delPhoto': {

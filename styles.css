@@ -362,3 +362,5 @@ label.big-btn { display: flex; align-items: center; justify-content: center; tex
 .defects.sugg li .link { text-align: left; flex: 1; min-width: 0; }
 .sugg-add { flex: none; }
 .sugg-add.on { opacity: .7; }
+.tool.clr { color: var(--muted); border-color: var(--line); flex: .8; }
+.tool:disabled { opacity: .45; }
