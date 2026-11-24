@@ -114,8 +114,7 @@ export function printDefectLines(insp, tpl) {
   // Nur, was in den Bemerkungen steht. B.-Punkte kommen nicht mehr automatisch hinein
   // (ihre Notiz steht schon neben dem Kästchen); sie lassen sich in der App per Antippen übernehmen.
   const out = (insp.remarks || '').split('\n').map(l => l.trim()).filter(Boolean);
-  const anyB = tpl.sections.some(s => s.items.some(it => insp.answers[it.id]?.s === 'b'));
-  if (!out.length && !anyB) out.push('Ohne Mängel');
+  // „Ohne Mängel“ wird nur in der App vorgeschlagen, nie selbst eingetragen
   return out;
 }
 
