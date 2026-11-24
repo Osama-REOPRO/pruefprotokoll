@@ -40,7 +40,7 @@ export function printTuer(insp, tpl, photos = []) {
   const opt = (label, on) => `<span class="popt">${esc(label)} ${mini(on)}</span>`;
 
   const left = tpl.sections.slice(0, 9).map((sec, si) => {
-    let rows = hrow(sec.title, false);
+    let rows = hrow(sec.title, si === 0); // erster Abschnitt trägt die Spaltenköpfe (wie auf Papier)
     for (const it of sec.items) {
       let label = esc(it.label);
       if (it.id === 'allg.schild') label = `${esc(it.label)} &nbsp; ja ${mini(X(it.id) === 'ja')} &nbsp; nein ${mini(X(it.id) === 'nein')}`;
@@ -77,9 +77,8 @@ export function printTuer(insp, tpl, photos = []) {
     <table class="paddr">
       <tr><td><b>Objekt:</b> ${objLines[0] ? ink(objLines[0]) : ''}</td><td><b>Kunde:</b> ${kundeLines[0] ? ink(kundeLines[0]) : ''}</td></tr>
       ${[1, 2, 3].map(i => `<tr><td>${objLines[i] ? ink(objLines[i]) : ''}</td><td>${kundeLines[i] ? ink(kundeLines[i]) : ''}</td></tr>`).join('')}
-      <tr><td></td><td><b>Tür-Nr.:</b> ${t.tuerNr ? ink(t.tuerNr) : ''}</td></tr>
+      <tr><td><b>Standort/Lage:</b> ${t.standort ? ink(t.standort) : ''}</td><td><b>Tür-Nr.:</b> ${t.tuerNr ? ink(t.tuerNr) : ''}</td></tr>
     </table>
-    <div class="pline pstand"><span class="plab"><b>Standort/Lage:</b></span><span class="pval">${t.standort ? ink(t.standort) : ''}</span></div>
     <div class="popts">
       <div>${['Inbetriebnahme', 'Abnahme', 'Wartung'].map(x => opt(x, t.art === x)).join('')}</div>
       <div>${['Rohrrahmen-Türen', 'Stahlblechtüren', 'Holztür'].map(x => opt(x, t.bauart === x)).join('')}</div>
@@ -87,7 +86,7 @@ export function printTuer(insp, tpl, photos = []) {
       <div>${opt('T 30', t.klasse === 'T30')}${opt('T 90', t.klasse === 'T90')}<span class="popt">sonstige ${mini(t.klasse === 'sonstige')} ${t.klasse === 'sonstige' && t.klasseSonst ? ink(t.klasseSonst) : ''}</span></div>
     </div>
     <div class="pgrund">
-      <div class="pline"><span class="plab blue b">Grunddaten Tür:</span><span class="pval"></span></div>
+      <div class="pline pnone"><span class="plab blue b pul">Grunddaten Tür:</span></div>
       <div class="pline"><span class="plab blue b">Hersteller:</span><span class="pval">${g.hersteller ? ink(g.hersteller) : ''}</span></div>
       <div class="pline"><span class="plab blue b">Fabr.- Nr.:</span><span class="pval">${g.fabrNr ? ink(g.fabrNr) : ''}</span></div>
       <div class="pline"><span class="plab blue b">Typ:</span><span class="pval">${g.typ ? ink(g.typ) : ''}</span></div>
@@ -99,7 +98,6 @@ export function printTuer(insp, tpl, photos = []) {
 
     <div class="pgrid">
       <div class="pleft"><table class="pchk p3">
-        <tr class="ph"><th></th><td class="pc">o.B.</td><td class="pc">B.</td><td class="pc">n.v.</td></tr>
         ${left}</table></div>
       <div class="pright">
         <table class="pchk p3">${right}</table>
