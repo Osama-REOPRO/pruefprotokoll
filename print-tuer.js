@@ -87,12 +87,14 @@ export function printTuer(insp, tpl, photos = []) {
     </div>
     <div class="pgrund">
       <div class="pline pnone"><span class="plab blue b pul">Grunddaten Tür:</span></div>
+      <div class="pline pnone"></div>
+      <div class="pline pnone"></div>
+      <div class="pline"><span class="plab blue b">Typ:</span><span class="pval">${g.typ ? ink(g.typ) : ''}</span></div>
       <div class="pline"><span class="plab blue b">Hersteller:</span><span class="pval">${g.hersteller ? ink(g.hersteller) : ''}</span></div>
       <div class="pline"><span class="plab blue b">Fabr.- Nr.:</span><span class="pval">${g.fabrNr ? ink(g.fabrNr) : ''}</span></div>
-      <div class="pline"><span class="plab blue b">Typ:</span><span class="pval">${g.typ ? ink(g.typ) : ''}</span></div>
+      <div class="pline"><span class="plab blue b">Baujahr:</span><span class="pval">${g.bj ? ink(g.bj) : ''}</span></div>
       <div class="pline"><span class="plab blue b">Anzahl d. Flügel:</span><span class="pval">${(g.fluegel || t.fluegel) ? ink(g.fluegel || t.fluegel) : ''}</span></div>
       <div class="pline pnone"></div>
-      <div class="pline"><span class="plab blue b">Baujahr:</span><span class="pval">${g.bj ? ink(g.bj) : ''}</span></div>
     </div>
     <div class="plegend">o.B= ohne Befund &nbsp; B.= Befund &nbsp;&nbsp;&nbsp;&nbsp; n.v.= nicht vorhanden</div>
 
