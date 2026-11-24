@@ -20,6 +20,12 @@ function unitOf(i) {
 }
 const unitSub = (u) => [u.typ, u.nr && `${u.nrLabel} ${u.nr}`].filter(Boolean).join(' · ');
 const $app = document.getElementById('app');
+// Laptop / PC (Maus, großer Bildschirm): eigene, dichte Oberfläche. Handy und Tablet bleiben unverändert.
+const deskMQ = matchMedia('(min-width: 1000px) and (hover: hover) and (pointer: fine)');
+let DESK = false;
+function applyDesk() { DESK = deskMQ.matches; document.documentElement.classList.toggle('desk', DESK); if (!DESK) document.getElementById('dknav').innerHTML = ''; }
+applyDesk();
+deskMQ.addEventListener('change', () => { applyDesk(); route(); });
 
 // ---------- kleine Helfer ----------
 const esc = (s) => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
@@ -129,6 +135,7 @@ const isGuide = (h) => /^#\/handbuch/.test(h || '');
 async function route() {
   if (isGuide(location.hash) && !isGuide(lastHash)) guideReturn = { hash: lastHash || '#/', y: window.scrollY };
   await routeInner();
+  if (DESK) await renderNav();
   if (pendingY != null) { const y = pendingY; pendingY = null; requestAnimationFrame(() => window.scrollTo(0, y)); }
 }
 async function routeInner() {
@@ -205,6 +212,7 @@ async function renderHome() {
   const done = vInfo.filter(isDone).sort((a, b) => dateKey(b.v.datum).localeCompare(dateKey(a.v.datum)));
   const single = all.filter(i => !i.visitId);
   const resume = all.find(i => i.status !== 'done' && Object.keys(i.answers || {}).some(k => i.answers[k].s));
+  if (DESK) return renderHomeDesk({ open, done, single, resume, all, visits });
 
   $app.innerHTML = `
     <header class="bar">
@@ -360,7 +368,7 @@ function topBar() {
       <span id="saved" class="saved ok">✓ gespeichert</span>
       <button class="icon-btn" data-act="menu" data-for="insp" data-id="${insp.id}" aria-label="Mehr">⋯</button>
     </header>
-    <div class="segs" data-act="jump">${segs}</div>${sideSteps()}`;
+    <div class="segs" data-act="jump">${segs}</div>${DESK ? '' : sideSteps()}`;
 }
 function bottomBar(nextLabel, nextClass = '') {
   return `<nav class="bottom">
@@ -412,10 +420,11 @@ function renderHeader() {
           <span class="inwrap">
             <input class="field" data-h="${g.id}.${f.key}" value="${esc(vals[f.key])}"
               ${f.inputmode ? `inputmode="${f.inputmode}"` : ''} enterkeyhint="next" autocomplete="off"
-              ${f.hint ? `placeholder="${esc(f.hint)}"` : ''}>
+              ${f.hint ? `placeholder="${esc(f.hint)}"` : ''} ${DESK && f.suggest ? `list="dl-${g.id}-${f.key}"` : ''}>
+            ${DESK && f.suggest ? `<datalist id="dl-${g.id}-${f.key}">${f.suggest.map(x => `<option value="${esc(x)}">`).join('')}</datalist>` : ''}
             ${f.unit ? `<span class="unit">${esc(f.unit)}</span>` : ''}
           </span>
-          ${f.suggest ? `<span class="chips">${f.suggest.map(s => `<button type="button" class="chip" data-act="fill" data-h="${g.id}.${f.key}" data-v="${esc(s)}">${esc(s)}</button>`).join('')}</span>` : ''}
+          ${f.suggest && !DESK ? `<span class="chips">${f.suggest.map(s => `<button type="button" class="chip" data-act="fill" data-h="${g.id}.${f.key}" data-v="${esc(s)}">${esc(s)}</button>`).join('')}</span>` : ''}
         </label>`).join('')}
       </div>
     </section>`;
@@ -456,6 +465,7 @@ async function hydrateThumbs(root = document) {
 }
 
 function rowHTML(it) {
+  if (DESK && !it.heading) return rowDesk(it);
   if (it.heading) return `<h3 class="row-head">${esc(it.heading)}</h3>`;
   const a = insp.answers[it.id] || {};
   // Nur Angabe, ohne o.B./B. (z. B. Typ, Anzahl bei der Feststellanlage)
@@ -533,6 +543,7 @@ function renderSection(sec) {
         ${insp.prev ? `<button class="tool prev" data-act="asLast" ${prevAvail ? '' : 'disabled'}>↺ Wie letztes Mal</button>` : ''}
         <button class="tool ok" data-act="allOk" ${untouched.length ? '' : 'disabled'}>✓ Rest o.B.</button>
       </div>
+      ${DESK ? `<div class="dhead"><span>Prüfpunkt</span><span>${(tpl.states || ['ok', 'b']).map(v => STATE_BTN[v][2]).join(' · ')}</span><span>Notiz (steht neben dem Kästchen)</span></div>` : ''}
       ${sec.items.map(rowHTML).join('')}
     </main>
     ${bottomBar('Weiter ›')}`;
@@ -994,6 +1005,7 @@ function itemRow(i) {
     <button class="dup-btn" data-act="menu" data-for="item" data-id="${i.id}" aria-label="Mehr zu ${esc(t.noun)}">⋯</button></div>`;
 }
 async function renderVisit() {
+  if (DESK) return renderVisitDesk();
   const v = ensurePairs(visit), all = await visitItems(v);
   const multi = v.pairs.length > 1;
   const showAll = multi && v.filter === 'all';
@@ -1326,7 +1338,7 @@ document.addEventListener('click', async (e) => {
     case 'newKind': closeJump(); return newInspection();
     case 'open': return (location.hash = `#/p/${b.dataset.id}`);
     case 'fromGate': return fromGate(b.dataset.id);
-    case 'theme': { const t = settings.get('theme', 'hell'); settings.set('theme', THEMES[(THEMES.indexOf(t) + 1) % THEMES.length]); applyLook(); return renderHome(); }
+    case 'theme': { const t = settings.get('theme', 'hell'); settings.set('theme', THEMES[(THEMES.indexOf(t) + 1) % THEMES.length]); applyLook(); return route(); }
     case 'size': { settings.set('size', settings.get('size', 'normal') === 'normal' ? 'gross' : 'normal'); return applyLook(); }
     case 'home': await saveNow(); return (location.hash = insp?.visitId ? `#/t/${insp.visitId}` : '#/');
     case 'jump': return openJump();
@@ -1554,6 +1566,181 @@ document.addEventListener('keydown', (e) => {
   const i = inputs.indexOf(e.target);
   if (inputs[i + 1]) inputs[i + 1].focus(); else e.target.blur();
 });
+
+// ---------- Laptop / PC: eigene Oberfläche ----------
+// Links eine feste Leiste (Termine bzw. Abschnitte der Prüfung), rechts Werkzeugleiste + dichte Tabellen.
+const pct = (a, b) => b ? Math.round(a / b * 100) : 0;
+const progBar = (a, b) => `<span class="dk-prog"><span style="width:${pct(a, b)}%"></span></span>`;
+const hasDefects = (i) => Object.values(i.answers || {}).some(a => a.s === 'b');
+const defectCount = (i) => Object.values(i.answers || {}).filter(a => a.s === 'b').length;
+
+async function renderNav() {
+  const nav = document.getElementById('dknav');
+  const h = location.hash;
+  if (insp && tpl && /^#\/p\//.test(h)) {
+    const u = unitOf(insp);
+    nav.innerHTML = `
+      <button class="dn-back" data-act="home">‹ ${insp.visitId ? 'Zum Termin' : 'Übersicht'}</button>
+      <div class="dn-title"><b>${esc(u.standort || `${u.noun} ohne Standort`)}</b><span>${esc(u.noun)} · ${esc(inspTitle(insp))}</span></div>
+      ${sideSteps()}`;
+    return;
+  }
+  const visits = await db.all('visits');
+  const allI = await db.all('inspections');
+  const info = visits.map(v => { const its = allI.filter(i => i.visitId === v.id); return { v, n: its.length, d: its.filter(i => i.status === 'done').length }; });
+  const isDone = (x) => x.n && x.d === x.n;
+  const open = info.filter(x => !isDone(x)).sort((a, b) => dateKey(a.v.datum).localeCompare(dateKey(b.v.datum)));
+  const done = info.filter(isDone).sort((a, b) => dateKey(b.v.datum).localeCompare(dateKey(a.v.datum))).slice(0, 12);
+  const curV = (h.match(/^#\/t\/([^/]+)/) || [])[1];
+  const vrow = ({ v, n, d }) => `<a class="dn-v ${v.id === curV ? 'on' : ''}" href="#/t/${v.id}">
+      <span class="dn-t">${esc(visitTitle(v))}</span>
+      <span class="dn-s">${esc(v.datum || '')}${visitKunden(v) ? ' · ' + esc(visitKunden(v)) : ''}</span>
+      <span class="dn-n">${d}/${n}</span></a>`;
+  const home = !h || h === '#/' || h === '#';
+  nav.innerHTML = `
+    <div class="dn-brand"><img src="icon.svg" alt=""> Prüfprotokolle</div>
+    <a class="dn-item ${home ? 'on' : ''}" href="#/">▤ Übersicht</a>
+    <a class="dn-item ${isGuide(h) ? 'on' : ''}" href="#/handbuch">📖 Feldhandbuch</a>
+    <div class="dn-h"><span>Offene Termine</span><button class="dn-add" data-act="newVisit" title="Neuer Termin">＋</button></div>
+    ${open.map(vrow).join('') || '<p class="dn-empty">Keine offenen Termine</p>'}
+    ${done.length ? `<div class="dn-h"><span>Erledigt</span></div>${done.map(vrow).join('')}` : ''}
+    <div class="dn-foot">
+      <button class="tb-btn sm" data-act="lang" title="Sprache">${LANG === 'en' ? 'DE' : 'EN'}</button>
+      <button class="tb-btn sm" data-act="theme" title="Darstellung">${{ hell: '☀︎', sonne: '◐', dunkel: '☾' }[settings.get('theme', 'hell')]}</button>
+      <button class="tb-btn sm" data-act="size" title="Schriftgröße">A<small>A</small></button>
+      <button class="tb-btn sm" data-act="keys" title="Tastenkürzel">⌨ ?</button>
+    </div>`;
+}
+
+function renderHomeDesk({ open, done, single, resume }) {
+  const vtr = ({ v, items }) => {
+    const d = items.filter(i => i.status === 'done').length;
+    const m = items.filter(i => i.status === 'done' && hasDefects(i)).length;
+    const today = dateKey(v.datum) === dateKey(todayDE());
+    return `<tr class="dt-click" data-act="openVisit" data-id="${v.id}">
+      <td class="nw">${today ? '<b class="today">Heute</b>' : esc(v.datum || '–')}</td>
+      <td><b>${esc(visitTitle(v))}</b></td>
+      <td>${esc(visitKunden(v))}</td>
+      <td class="num">${items.filter(i => TEMPLATES[i.templateId]?.kind === 'tor').length || ''}</td>
+      <td class="num">${items.filter(i => TEMPLATES[i.templateId]?.kind === 'tuer').length || ''}</td>
+      <td class="nw">${progBar(d, items.length)} <span class="muted">${d}/${items.length}</span></td>
+      <td class="num">${m ? `<b class="red">${m}</b>` : ''}</td>
+      <td class="acts"><button class="ib" data-act="sendVisit" data-id="${v.id}" title="Termin senden">📤</button><button class="ib" data-act="menu" data-for="visit" data-id="${v.id}" title="Mehr">⋯</button></td></tr>`;
+  };
+  const head = `<thead><tr><th>Datum</th><th>Objekt</th><th>Kunde</th><th class="num">Tore</th><th class="num">Türen</th><th>Fortschritt</th><th class="num">Mängel</th><th></th></tr></thead>`;
+  $app.innerHTML = `
+    <header class="bar dk-tb">
+      <div class="bar-title">Übersicht</div>
+      <button class="tb-btn primary" data-act="newVisit">＋ Neuer Termin</button>
+      <label class="tb-btn">⇅ Termin empfangen<input type="file" accept=".json,application/json" data-import hidden></label>
+    </header>
+    <main class="dk-page">
+      ${resume ? `<button class="dk-resume" data-act="open" data-id="${resume.id}"><span class="eyebrow">Weitermachen</span> <b>${esc(unitOf(resume).standort || inspTitle(resume))}</b> <span class="muted">${esc(inspTitle(resume))}</span> <span class="link-ish">Öffnen ›</span></button>` : ''}
+      <section class="dk-panel">
+        <h2>Offene Termine <span class="muted">${open.length}</span></h2>
+        ${open.length ? `<table class="dt">${head}<tbody>${open.map(vtr).join('')}</tbody></table>` : '<p class="dk-empty">Keine offenen Termine. Mit „＋ Neuer Termin“ anlegen oder eine Datei vom Handy empfangen (auch per Ziehen ins Fenster).</p>'}
+      </section>
+      ${done.length ? `<section class="dk-panel"><h2>Erledigt <span class="muted">${done.length}</span></h2><table class="dt">${head}<tbody>${done.slice(0, 50).map(vtr).join('')}</tbody></table></section>` : ''}
+      ${single.length ? `<section class="dk-panel"><h2>Einzelne Prüfungen <span class="muted">${single.length}</span></h2><table class="dt">
+        <thead><tr><th>Datum</th><th>Art</th><th>Standort</th><th>Objekt</th><th>Status</th><th></th></tr></thead><tbody>
+        ${single.slice(0, 50).map(i => { const u = unitOf(i); const m = defectCount(i); return `<tr class="dt-click" data-act="open" data-id="${i.id}">
+          <td class="nw">${esc(i.datum || '')}</td><td>${esc(u.noun)}</td><td><b>${esc(u.standort || '–')}</b></td><td>${esc(inspTitle(i))}</td>
+          <td>${i.status === 'done' ? (m ? `<span class="pill red">${m} Mängel</span>` : '<span class="pill green">o.B.</span>') : '<span class="pill">offen</span>'}</td>
+          <td class="acts"><button class="ib" data-act="menu" data-for="item" data-id="${i.id}" title="Mehr">⋯</button></td></tr>`; }).join('')}
+        </tbody></table></section>` : ''}
+    </main>`;
+}
+
+async function renderVisitDesk() {
+  const v = ensurePairs(visit), all = await visitItems(v);
+  const multi = v.pairs.length > 1;
+  const showAll = multi && v.filter === 'all';
+  const items = showAll || !multi ? all : all.filter(i => pairOfItem(v, i).id === v.filter);
+  const done = items.filter(i => i.status === 'done').length;
+  const withDef = items.filter(i => i.status === 'done' && hasDefects(i)).length;
+  const one = !multi ? v.pairs[0] : (showAll ? null : pairById(v, v.filter));
+  const tr = (i, n) => {
+    const [cls, label] = itemState(i);
+    const u = unitOf(i), h = i.header || {}, g = h.tor || h.grund || {};
+    const m = defectCount(i);
+    return `<tr class="dt-click st-${cls}" data-act="openItem" data-id="${i.id}">
+      <td class="num muted">${n}</td>
+      <td><span class="kind-tag ${TEMPLATES[i.templateId]?.kind}">${esc(u.noun)}</span></td>
+      <td><b>${esc(u.standort || '–')}</b></td>
+      <td>${esc(u.nr || '')}</td>
+      <td>${esc(u.typ || '')}</td>
+      <td>${esc(g.hersteller || '')}</td>
+      <td class="num">${esc(g.bj || '')}</td>
+      ${showAll ? `<td class="muted">${esc(pairLabel(pairOfItem(v, i)))}</td>` : ''}
+      <td><span class="pill ${cls === 'maengel' ? 'red' : cls === 'fertig' ? 'green' : ''}">${esc(label)}</span></td>
+      <td class="num">${m ? `<b class="red">${m}</b>` : ''}</td>
+      <td class="acts"><button class="ib" data-act="menuGo" data-href="#/druck/${i.id}" title="Drucken / PDF">🖨</button><button class="ib" data-act="duplicate" data-id="${i.id}" title="Kopie anlegen (gleiche Häkchen)">⧉</button><button class="ib" data-act="menu" data-for="item" data-id="${i.id}" title="Mehr">⋯</button></td></tr>`;
+  };
+  $app.innerHTML = `
+    <header class="bar dk-tb">
+      <button class="tb-btn icon" data-act="toHome" title="Übersicht">‹</button>
+      <div class="bar-title"><span class="t">${esc(visitTitle(v))}</span><span class="sub">${esc(v.datum || '')}${visitKunden(v) ? ' · ' + esc(visitKunden(v)) : ''}</span></div>
+      <button class="tb-btn" data-act="editVisit">✎ Termin bearbeiten</button>
+      <span class="tb-sep"></span>
+      <button class="tb-btn primary" data-act="addNewGate" data-kind="tor">＋ Tor</button>
+      <button class="tb-btn primary" data-act="addNewGate" data-kind="tuer">＋ Tür</button>
+      <span class="tb-sep"></span>
+      <button class="tb-btn" data-act="sendVisit" data-id="${v.id}">📤 Senden</button>
+      ${items.length ? `<button class="tb-btn" data-act="printVisit">🖨 ${items.length === 1 ? 'Drucken' : `Alle ${items.length} drucken`}</button>` : ''}
+      <button class="tb-btn icon" data-act="menu" data-for="visit" data-id="${v.id}" title="Mehr">⋯</button>
+    </header>
+    <main class="dk-page">
+      ${multi ? pairChips(v, all) : ''}
+      <div class="dk-sum">
+        ${one ? `<span>${esc([one.kunde?.name, [one.objekt?.name, one.objekt?.strasse, one.objekt?.plzOrt].filter(Boolean).join(', ')].filter(Boolean).join(' · '))}</span>` : `<span>${v.pairs.length} Paare aus Kunde und Objekt</span>`}
+        <span class="dk-sum-r">${progBar(done, items.length)} <b>${done} von ${items.length} fertig</b>${withDef ? ` · <b class="red">${withDef} mit Mängeln</b>` : ''}</span>
+      </div>
+      <section class="dk-panel">
+        ${items.length ? `<table class="dt">
+          <thead><tr><th class="num">#</th><th>Tor / Tür</th><th>Standort / Lage</th><th>Nr.</th><th>Typ</th><th>Hersteller</th><th class="num">Bj.</th>${showAll ? '<th>Kunde · Objekt</th>' : ''}<th>Status</th><th class="num">Mängel</th><th></th></tr></thead>
+          <tbody>${showAll
+            ? v.pairs.map(p => { const its = all.filter(i => pairOfItem(v, i).id === p.id); return `<tr class="dt-group"><td colspan="11"><button class="link" data-act="filterPair" data-id="${p.id}">${esc(pairLabel(p))} ›</button> <span class="muted">${its.length}</span></td></tr>${its.map((i, n) => tr(i, n + 1)).join('')}`; }).join('')
+            : items.map((i, n) => tr(i, n + 1)).join('')}</tbody></table>`
+          : '<p class="dk-empty">Noch keine Tore oder Türen. Oben mit „＋ Tor“ oder „＋ Tür“ hinzufügen.</p>'}
+      </section>
+    </main>`;
+}
+
+// Prüfzeile als Tabellenzeile: Text | o.B. B. n.v. | Notiz. Bei B. klappt darunter die Mangelbeschreibung auf.
+function rowDesk(it) {
+  const a = insp.answers[it.id] || {};
+  if (it.noStatus) {
+    const input = it.choice
+      ? `<div class="chips opt">${it.choice.map(o => `<button class="chip ${a.x === o ? 'on' : ''}" data-act="xchoice" data-id="${it.id}" data-v="${esc(o)}">${esc(o)}</button>`).join('')}</div>`
+      : `<input class="field sm" data-x="${it.id}" value="${esc(a.x)}" ${it.inputmode ? `inputmode="${it.inputmode}"` : ''} autocomplete="off">`;
+    return `<div class="row drow info" id="r-${it.id}"><div class="dc-lbl">${esc(it.label)}</div><div class="dc-in">${input}</div></div>`;
+  }
+  const s = a.s, p = insp.prev?.[it.id] || {}, ex = it.extra;
+  let extra = '';
+  if (ex?.type === 'single' || ex?.type === 'multi') {
+    const sel = ex.type === 'multi' ? (a.x || []) : [a.x];
+    extra = `<span class="chips opt">${ex.options.map(o => `<button class="chip ${sel.includes(o) ? 'on' : ''}" data-act="extra" data-id="${it.id}" data-v="${esc(o)}">${esc(o)}</button>`).join('')}</span>`;
+  } else if (ex?.type === 'text') {
+    extra = `<input class="field xs" data-x="${it.id}" value="${esc(a.x)}" placeholder="${esc(ex.placeholder || '')}" autocomplete="off">`;
+  }
+  const ghost = (v) => !s && p.s === v ? 'ghost' : '';
+  const states = (tpl.states || ['ok', 'b']).map(v => { const [cls, icon, txt] = STATE_BTN[v];
+    return `<button class="${cls} ${s === v ? 'on' : ''} ${ghost(v)}" data-act="set" data-id="${it.id}" data-v="${v}" title="${ghost(v) ? 'letztes Mal ' : ''}${txt}">${icon} ${txt}</button>`; }).join('');
+  const defect = s === 'b' ? `
+    <div class="dc-defect">
+      <textarea class="field" rows="2" data-note="${it.id}" placeholder="Mangel beschreiben, steht auf dem Ausdruck neben der Zeile">${esc(a.note)}</textarea>
+      <div class="dc-defect-tools"><span class="chips">${tpl.defectChips.map(c => `<button class="chip" data-act="chipNote" data-id="${it.id}" data-v="${esc(c)}">${esc(c)}</button>`).join('')}</span>
+      <label class="tb-btn sm">📷 Foto<input type="file" accept="image/*" data-photo-for="${it.id}" hidden></label></div>
+      ${thumbsHTML(a.photos, it.id, true)}
+    </div>` : '';
+  return `<div class="row drow ${s || ''} ${!s && p.s ? 'has-prev' : ''} ${p.s === 'b' ? 'was-b' : ''}" id="r-${it.id}">
+    <div class="dc-lbl">${esc(it.label)}${guideLink(it)}${extra ? ` ${extra}` : ''}
+      ${p.s === 'b' ? `<div class="dc-prev">Letztes Mal B.${insp.prevDatum ? ` (${esc(insp.prevDatum)})` : ''}${p.note ? ': ' + esc(p.note) : ''}</div>` : ''}</div>
+    <div class="dc-st seg2 n${(tpl.states || ['ok', 'b']).length}" role="group">${states}</div>
+    <div class="dc-note">${s === 'b' ? '<span class="muted small">siehe unten</span>' : `<input class="field xs" data-note="${it.id}" value="${esc(a.note)}" placeholder="${p.note ? 'letztes Mal: ' + esc(p.note) : 'Notiz'}" autocomplete="off">`}</div>
+    ${defect}
+  </div>`;
+}
 
 // ---------- Termin senden / empfangen ----------
 async function sendVisit(id) {
