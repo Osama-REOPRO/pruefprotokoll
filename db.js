@@ -41,15 +41,26 @@ function tx(store, mode, fn) {
 export const uid = () =>
   (crypto.randomUUID ? crypto.randomUUID() : Date.now().toString(36) + Math.random().toString(36).slice(2));
 
+const VIEW_ONLY = new Set(['createdAt', 'updatedAt', 'lastStep', 'maxStep', 'filter', 'editPair', 'lastPair']);
+const canon = (o) => JSON.stringify(o, (k, v) => (VIEW_ONLY.has(k) ? undefined
+  : v && typeof v === 'object' && !Array.isArray(v) ? Object.fromEntries(Object.keys(v).sort().map(x => [x, v[x]])) : v));
+const sameContent = (a, b) => canon(a) === canon(b);
+
 export const db = {
   get: (store, id) => tx(store, 'readonly', s => s.get(id)),
   all: (store) => tx(store, 'readonly', s => s.getAll()),
-  put: (store, rec) => {
+  // updatedAt ändert sich nur, wenn sich am Inhalt wirklich etwas geändert hat.
+  // Nur Ansehen / Blättern (Ansichts-Felder unten) zählt nicht als Änderung, damit beim
+  // Abgleich zwischen Handy und Laptop die echte neuere Fassung gewinnt.
+  put: async (store, rec) => {
     const now = new Date().toISOString();
-    rec.createdAt ??= now;
-    rec.updatedAt = now;
+    const old = store === 'photos' ? null : await tx(store, 'readonly', s => s.get(rec.id));
+    rec.createdAt ??= old?.createdAt ?? now;
+    rec.updatedAt = old && sameContent(old, rec) ? old.updatedAt : now;
     return tx(store, 'readwrite', s => s.put(rec)).then(() => rec);
   },
+  // Unverändert speichern (Empfang von einem anderen Gerät: Zeitstempel bleiben erhalten)
+  putRaw: (store, rec) => tx(store, 'readwrite', s => s.put(rec)).then(() => rec),
   del: (store, id) => tx(store, 'readwrite', s => s.delete(id)),
 };
 

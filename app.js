@@ -4,6 +4,7 @@ import { db, uid, requestPersistence } from './db.js';
 import { printTore } from './print-tore.js';
 import { printTuer } from './print-tuer.js';
 import { LANG, setLang, startI18n } from './i18n.js';
+import { exportVisit, sendFile, importFile, fileName } from './sync.js';
 import { renderGuide, guideHref, openGuideToc, openZoom, closeZoom } from './guide-view.js';
 
 const TEMPLATES = { [TEMPLATE_TORE.id]: TEMPLATE_TORE, [TEMPLATE_TUER.id]: TEMPLATE_TUER };
@@ -222,6 +223,7 @@ async function renderHome() {
           ${progressMini(resume)}
         </button>` : ''}
       <button class="big-btn primary" data-act="newVisit">＋ Neuer Termin</button>
+      <label class="big-btn recv-btn">⇅ Termin empfangen (Datei öffnen)<input type="file" accept=".json,application/json" data-import hidden></label>
       ${open.length ? `<section class="card"><h2>Termine</h2>${open.map(visitRow).join('')}</section>` : ''}
       ${done.length ? `<section class="card"><h2>Erledigt</h2>${done.slice(0, 30).map(visitRow).join('')}</section>` : ''}
       ${single.length ? `<section class="card"><h2>Einzelne Prüfungen</h2>${single.slice(0, 30).map(listRow).join('')}</section>` : ''}
@@ -932,7 +934,7 @@ async function openMenu(forWhat, id) {
     const removePair = v.pairs.length > 1 && P ? [del('pair', `${v.id}:${P.id}`, `Paar aus Termin entfernen: ${pairLabel(P)}`)] : [];
     if (forWhat === 'visit') {
       title = visitTitle(v);
-      rows = [go(`#/t/${v.id}/edit`, '✎ Termin bearbeiten'), btn('addPair', v.id, '＋ Paar (weiterer Kunde / weiteres Objekt)'), go(`#/druck-t/${v.id}`, '🖨 Alle Protokolle drucken'), del('visit', v.id, 'Termin löschen'),
+      rows = [go(`#/t/${v.id}/edit`, '✎ Termin bearbeiten'), btn('addPair', v.id, '＋ Paar (weiterer Kunde / weiteres Objekt)'), go(`#/druck-t/${v.id}`, '🖨 Alle Protokolle drucken'), btn('sendVisit', v.id, '📤 Termin senden (an Handy / Laptop)'), del('visit', v.id, 'Termin löschen'),
         ...(P ? [del('site', P.siteId, `Objekt löschen: ${oName}`), del('customer', P.customerId, `Kunde löschen: ${kName}`)] : [])];
     } else if (forWhat === 'kunde') { title = kName; rows = [...removePair, del('customer', P.customerId, 'Kunde löschen')]; }
     else { title = oName; rows = [...removePair, del('site', P.siteId, 'Objekt löschen')]; }
@@ -1023,6 +1025,7 @@ async function renderVisit() {
         <button class="big-btn" data-act="addNewGate" data-kind="tor">＋ Tor</button>
         <button class="big-btn" data-act="addNewGate" data-kind="tuer">＋ Tür</button>
       </div>
+      <button class="big-btn" data-act="sendVisit" data-id="${v.id}">📤 Termin senden (an Handy / Laptop)</button>
       ${items.length ? `<button class="big-btn" data-act="printVisit">🖨 ${items.length === 1 ? 'Protokoll' : `Alle ${items.length} Protokolle`} drucken / PDF</button>` : ''}
     </main>`;
 }
@@ -1394,6 +1397,7 @@ document.addEventListener('click', async (e) => {
     case 'editItem': await saveVisit(); return (location.hash = `#/p/${b.dataset.id}/0`);
     case 'menu': return openMenu(b.dataset.for, b.dataset.id);
     case 'keys': return openKeys();
+    case 'sendVisit': return sendVisit(b.dataset.id);
     case 'guideClose': { const r = guideReturn; guideReturn = null; if (r && !isGuide(r.hash)) { pendingY = r.y; return (location.hash = r.hash || '#/'); } return (location.hash = '#/'); }
     case 'guideToc': return openGuideToc(sheet);
     case 'zoomClose': return closeZoom();
@@ -1550,6 +1554,48 @@ document.addEventListener('keydown', (e) => {
   const i = inputs.indexOf(e.target);
   if (inputs[i + 1]) inputs[i + 1].focus(); else e.target.blur();
 });
+
+// ---------- Termin senden / empfangen ----------
+async function sendVisit(id) {
+  closeJump();
+  if (visit?.id === id) await saveVisit();
+  try {
+    const data = await exportVisit(id);
+    const r = await sendFile(data, fileName(visitTitle(data.visit), data.visit.datum));
+    if (r === 'downloaded') snack('Datei gespeichert. Per Mail, WhatsApp oder AirDrop an das andere Gerät schicken und dort „Termin empfangen“ tippen.');
+    else if (r === 'shared') snack('Gesendet. Auf dem anderen Gerät „Termin empfangen“ tippen.');
+  } catch (e) { snack('Senden ging nicht: ' + e.message); }
+}
+async function receiveFile(file) {
+  if (!file) return;
+  try {
+    if (insp) await saveNow();
+    if (visit) await saveVisit();
+    const r = await importFile(file);
+    insp = null; tpl = null;
+    const parts = [];
+    if (r.isNew) parts.push('Neuer Termin übernommen.');
+    else if (r.added + r.updated) parts.push(`Termin aktualisiert (${r.added + r.updated} Änderungen).`);
+    else parts.push(r.keptLocal ? 'Nichts überschrieben: hier ist schon der neuere Stand.' : 'Nichts Neues, alles schon aktuell.');
+    if (r.keptLocal && (r.isNew || r.added + r.updated)) parts.push(`${r.keptLocal} × war hier neuer und bleibt.`);
+    buzz();
+    if (location.hash === `#/t/${r.visitId}`) await route(); else location.hash = `#/t/${r.visitId}`;
+    setTimeout(() => snack(parts.join(' ')), 300);
+  } catch (e) { snack(e.message); }
+}
+document.addEventListener('change', (e) => {
+  if (e.target.matches?.('input[data-import]')) { receiveFile(e.target.files[0]); e.target.value = ''; }
+});
+// Laptop: Datei einfach ins Fenster ziehen
+document.addEventListener('dragover', (e) => { if ([...(e.dataTransfer?.types || [])].includes('Files')) e.preventDefault(); });
+document.addEventListener('drop', (e) => {
+  const f = e.dataTransfer?.files?.[0];
+  if (f && /\.json$/i.test(f.name)) { e.preventDefault(); receiveFile(f); }
+});
+// Installierte App am Laptop (Chrome/Edge): Datei per Doppelklick öffnen
+if ('launchQueue' in window) {
+  window.launchQueue.setConsumer(async (p) => { for (const h of p.files || []) receiveFile(await h.getFile()); });
+}
 
 // ---------- Start ----------
 (async function start() {

@@ -12,6 +12,11 @@ const EN = {
   'Alles wird nur auf diesem Handy gespeichert und funktioniert auch ohne Netz.': 'Everything is stored only on this phone and works offline.',
   'Schriftgröße': 'Text size', 'Darstellung': 'Appearance', 'Sprache': 'Language', 'Übersicht': 'Overview', 'Zur Übersicht': 'To overview',
   'Zum Termin': 'To appointment', 'Mehr': 'More', 'Abbrechen': 'Cancel', 'Schließen': 'Close', 'Löschen': 'Delete', 'Entfernen': 'Remove',
+  '⇅ Termin empfangen (Datei öffnen)': '⇅ Receive appointment (open file)', '📤 Termin senden (an Handy / Laptop)': '📤 Send appointment (to phone / laptop)',
+  'Neuer Termin übernommen.': 'New appointment received.', 'Nichts Neues, alles schon aktuell.': 'Nothing new, already up to date.', 'Nichts überschrieben: hier ist schon der neuere Stand.': 'Nothing overwritten: this device already has the newer version.',
+  'Die Datei ist kein Termin aus dieser App.': 'This file is not an appointment from this app.',
+  'Gesendet. Auf dem anderen Gerät „Termin empfangen“ tippen.': 'Sent. On the other device tap “Receive appointment”.',
+  'Datei gespeichert. Per Mail, WhatsApp oder AirDrop an das andere Gerät schicken und dort „Termin empfangen“ tippen.': 'File saved. Send it to the other device by mail, WhatsApp or AirDrop and tap “Receive appointment” there.',
   'Feldhandbuch': 'Field guide', 'Handbuch': 'Guide', 'Kapitel': 'Chapters', 'Abschnitte': 'Sections',
   'Im Handbuch suchen (z. B. Feder, SKS, Luftspalt)': 'Search the guide (e.g. Feder, SKS, Luftspalt)',
   'Im Handbuch nachlesen': 'Read in the field guide', 'Nichts gefunden.': 'Nothing found.', 'Bild schließen': 'Close image',
@@ -147,6 +152,9 @@ const EN = {
 };
 
 const RULES = [
+  [/^Termin aktualisiert \((\d+) Änderungen\)\.(.*)$/, (m) => `Appointment updated (${m[1]} changes).${m[2] ? ' ' + tr(m[2].trim()) : ''}`],
+  [/^Neuer Termin übernommen\. (\d+) × war hier neuer und bleibt\.$/, (m) => `New appointment received. ${m[1]} × was newer here and was kept.`],
+  [/^(.*?) ?(\d+) × war hier neuer und bleibt\.$/, (m) => `${m[1] ? tr(m[1]) + ' ' : ''}${m[2]} × was newer here and was kept.`],
   [/^Paar aus Termin entfernen: (.*)$/, (m) => `Remove pair from appointment: ${m[1]}`],
   [/^Zugeordnet: (.*)$/, (m) => `Assigned: ${m[1]}`],
   [/^Kunde \/ Objekt für diese (Tür|Tor)$/, (m) => `Customer / site for this ${m[1] === 'Tür' ? 'door' : 'gate'}`],
