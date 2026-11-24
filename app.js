@@ -934,7 +934,8 @@ async function renderVisitEdit() {
     const g = TEMPLATE_TORE.header.find(x => x.id === gid);
     return `<section class="card form-group"><h2 class="h-menu">${esc(g.title)}<button class="more-btn" data-act="menu" data-for="${gid}" data-id="${v.id}" aria-label="Mehr zu ${esc(g.title)}">⋯</button></h2><div class="grid">${g.fields.map(f => `
       <label class="fld ${f.half ? 'half' : ''}"><span class="lbl">${esc(f.label)}${f.required ? ' <i class="req">*</i>' : ''}</span>
-        <input class="field" data-vh="${gid}.${f.key}" value="${esc(v[gid]?.[f.key])}" enterkeyhint="next" autocomplete="off"></label>`).join('')}</div></section>`;
+        <input class="field" data-vh="${gid}.${f.key}" value="${esc(v[gid]?.[f.key])}" enterkeyhint="next" autocomplete="off" ${f.key === 'name' ? `data-suggest="${gid}" role="combobox" aria-autocomplete="list"` : ''}>
+        ${f.key === 'name' ? `<div class="suggest hidden" id="sg-${gid}" role="listbox"></div>` : ''}</label>`).join('')}</div></section>`;
   };
   $app.innerHTML = `
     <header class="bar">
@@ -943,11 +944,6 @@ async function renderVisitEdit() {
       <span id="saved" class="saved ok">✓ gespeichert</span>
     </header>
     <main class="step">
-      ${sites.length && !items.length && !v.sitePicked ? `<section class="card">
-        <h2>Bekanntes Objekt?</h2>
-        <input class="field" type="search" id="siteSearch" placeholder="Suchen: Kunde, Straße, Ort" autocomplete="off">
-        <div id="siteList"></div>
-      </section>` : ''}
       <section class="card"><label class="fld"><span class="lbl">Datum</span>
         <input class="field" data-vf="datum" value="${esc(v.datum)}" inputmode="numeric"></label></section>
       ${groupHTML('kunde')}
@@ -974,17 +970,72 @@ async function renderVisitEdit() {
     </main>
     <nav class="bottom"><button class="nav-btn next ready" data-act="openVisit" data-id="${v.id}">Fertig ›</button></nav>`;
 
-  const search = document.getElementById('siteSearch');
-  if (search) {
-    const custs = Object.fromEntries((await db.all('customers')).map(c => [c.id, c]));
+  await setupSuggest(sites);
+}
+
+// Kunde- und Objekt-Feld sind zugleich Suche: beim Tippen bekannte Einträge vorschlagen.
+// Antippen übernimmt den Eintrag, einfach weitertippen legt einen neuen an.
+async function setupSuggest(sites) {
+  const v = visit;
+  const custs = await db.all('customers');
+  const byId = Object.fromEntries(custs.map(c => [c.id, c]));
+  const norm = (x) => String(x || '').toLowerCase();
+  const find = (gid, q) => {
+    q = norm(q).trim();
+    if (gid === 'kunde') {
+      if (!q) return [];
+      return custs.filter(c => c.id !== v.customerId && c.name && norm([c.name, c.zusatz, c.strasse, c.plzOrt].join(' ')).includes(q)).slice(0, 6)
+        .map(c => ({ act: 'pickCustomer', id: c.id, main: c.name, sub: [c.strasse, c.plzOrt].filter(Boolean).join(', ') }));
+    }
+    const list = sites.filter(st => st.id !== v.siteId && (st.name || st.strasse) &&
+      (q ? norm([st.name, st.strasse, st.plzOrt, byId[st.customerId]?.name].join(' ')).includes(q) : st.customerId === v.customerId));
+    list.sort((a, b) => (b.customerId === v.customerId) - (a.customerId === v.customerId));
+    return list.slice(0, 6).map(st => ({ act: 'pickSite', id: st.id, main: [st.name, st.strasse].filter(Boolean).join(', '), sub: [st.plzOrt, byId[st.customerId]?.name].filter(Boolean).join(' · ') }));
+  };
+  for (const input of document.querySelectorAll('input[data-suggest]')) {
+    const gid = input.dataset.suggest, box = document.getElementById('sg-' + gid);
+    let active = -1, hits = [];
     const draw = () => {
-      const q = search.value.trim().toLowerCase();
-      const hits = sites.filter(st => st.id !== v.siteId && (st.name || st.strasse || st.plzOrt)).filter(st => !q || [st.name, st.strasse, st.plzOrt, custs[st.customerId]?.name].join(' ').toLowerCase().includes(q)).slice(0, 8);
-      document.getElementById('siteList').innerHTML = hits.map(st => `<div class="row-wrap"><button class="list-row" data-act="pickSite" data-id="${st.id}">
-        <span><b>${esc([st.name, st.strasse].filter(Boolean).join(', '))}</b><br><span class="muted small">${esc([st.plzOrt, custs[st.customerId]?.name].filter(Boolean).join(' · '))}</span></span><span class="chev">›</span></button><button class="more-btn" data-act="menu" data-for="site" data-id="${st.id}" aria-label="Mehr">⋯</button></div>`).join('') || (q ? '<p class="muted">Nichts gefunden.</p>' : '');
+      hits = find(gid, input.value); active = -1;
+      box.classList.toggle('hidden', !hits.length);
+      input.setAttribute('aria-expanded', hits.length ? 'true' : 'false');
+      box.innerHTML = hits.map((h, i) => `<button type="button" class="sg-item" role="option" data-act="${h.act}" data-id="${h.id}" data-i="${i}">
+          <b>${esc(h.main)}</b>${h.sub ? `<span class="muted small">${esc(h.sub)}</span>` : ''}</button>`).join('')
+        + (input.value.trim() ? `<div class="sg-new muted small">${gid === 'kunde' ? 'Oder weitertippen: neuer Kunde' : 'Oder weitertippen: neues Objekt'}</div>` : '');
     };
-    search.addEventListener('input', draw); draw();
+    const mark = () => box.querySelectorAll('.sg-item').forEach((el, i) => el.classList.toggle('on', i === active));
+    input.addEventListener('input', draw);
+    input.addEventListener('focus', draw);
+    input.addEventListener('blur', () => setTimeout(() => box.classList.add('hidden'), 150));
+    box.addEventListener('pointerdown', (e) => e.preventDefault()); // Fokus behalten, damit der Klick ankommt
+    input.addEventListener('keydown', (e) => {
+      if (box.classList.contains('hidden') || !hits.length) return;
+      if (e.key === 'ArrowDown') { e.preventDefault(); active = (active + 1) % hits.length; mark(); }
+      else if (e.key === 'ArrowUp') { e.preventDefault(); active = (active - 1 + hits.length) % hits.length; mark(); }
+      else if (e.key === 'Enter' && active >= 0) { e.preventDefault(); e.stopImmediatePropagation(); box.querySelectorAll('.sg-item')[active].click(); }
+      else if (e.key === 'Escape') { box.classList.add('hidden'); }
+    });
   }
+}
+
+// Beim Übernehmen eines bekannten Eintrags: den gerade erst angetippten, nirgends genutzten Entwurf wieder entfernen
+async function dropIfUnused(kind, id) {
+  if (!id) return;
+  const [visits, inspections, gates, sites] = await Promise.all(['visits', 'inspections', 'gates', 'sites'].map(x => db.all(x)));
+  const key = kind === 'customers' ? 'customerId' : 'siteId';
+  const used = visits.some(x => x[key] === id) || inspections.some(x => x[key] === id) || gates.some(x => x[key] === id)
+    || (kind === 'customers' && sites.some(x => x.customerId === id));
+  if (!used) await db.del(kind, id);
+}
+async function pickCustomer(id) {
+  clearTimeout(visitTimer);
+  const c = await db.get('customers', id); if (!c) return;
+  const oldC = visit.customerId;
+  Object.assign(visit, { customerId: c.id, kunde: strip(c) });
+  await saveVisit();
+  await dropIfUnused('customers', oldC);
+  await renderVisitEdit();
+  document.querySelector('input[data-vh="objekt.name"]')?.focus();
 }
 
 let visitTimer = null;
@@ -1005,10 +1056,14 @@ async function saveVisit() {
   showSaved();
 }
 async function pickSite(siteId) {
-  const st = await db.get('sites', siteId);
+  clearTimeout(visitTimer);
+  const st = await db.get('sites', siteId); if (!st) return;
   const c = await db.get('customers', st.customerId) || {};
-  Object.assign(visit, { siteId: st.id, customerId: st.customerId, objekt: strip(st), kunde: strip(c), sitePicked: true });
+  const oldS = visit.siteId, oldC = visit.customerId;
+  Object.assign(visit, { siteId: st.id, customerId: st.customerId || visit.customerId, objekt: strip(st), ...(st.customerId ? { kunde: strip(c) } : {}), sitePicked: true });
   await saveVisit();
+  await dropIfUnused('sites', oldS);
+  if (oldC !== visit.customerId) await dropIfUnused('customers', oldC);
   renderVisitEdit();
 }
 async function addGateToVisit(gateId, kind = 'tor') {
@@ -1186,6 +1241,7 @@ document.addEventListener('click', async (e) => {
     case 'confirmDel': { closeJump(); const p = pendingDelete; pendingDelete = null; await runDelete(p); buzz([20, 40, 20]); await rerenderAfterDelete(p); return setTimeout(() => snack('Gelöscht.'), 250); }
     case 'cancelDel': pendingDelete = null; return closeJump();
     case 'pickSite': return pickSite(b.dataset.id);
+    case 'pickCustomer': return pickCustomer(b.dataset.id);
     case 'addKnownGate': await saveVisit(); await addGateToVisit(b.dataset.id); buzz(); return renderVisitEdit();
     case 'addAllKnown': {
       await saveVisit();

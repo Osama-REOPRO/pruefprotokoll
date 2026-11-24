@@ -342,3 +342,12 @@ kbd { display: inline-block; min-width: 1.6em; padding: 1px 5px; border: 1px sol
 }
 
 .lang-btn { font-size: .78em; font-weight: 800; letter-spacing: .04em; }
+
+/* Vorschläge unter Kunde / Objekt */
+.fld:has(.suggest) { position: relative; }
+.suggest { position: absolute; left: 0; right: 0; top: 100%; z-index: 15; margin-top: 4px; background: var(--card); border: 2px solid var(--brand);
+  border-radius: 12px; box-shadow: 0 8px 24px rgba(0,0,0,.18); overflow: hidden; }
+.sg-item { display: flex; flex-direction: column; gap: 2px; width: 100%; text-align: left; padding: 12px 14px; min-height: var(--tap); border: 0; border-top: 1px solid var(--line); background: none; }
+.sg-item:first-child { border-top: 0; }
+.sg-item.on, .sg-item:hover { background: color-mix(in srgb, var(--brand) 10%, var(--card)); }
+.sg-new { padding: 8px 14px; border-top: 1px solid var(--line); background: var(--bg); }

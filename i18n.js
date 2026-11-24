@@ -132,6 +132,7 @@ const EN = {
 
   // Druckansicht (Leiste, nicht das Formular)
   'Fotos zu festgestellten Mängeln': 'Photos of defects found',
+  'Oder weitertippen: neuer Kunde': 'Or keep typing: new customer', 'Oder weitertippen: neues Objekt': 'Or keep typing: new site',
 };
 
 const RULES = [
