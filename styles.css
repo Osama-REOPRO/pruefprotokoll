@@ -357,3 +357,8 @@ label.big-btn { display: flex; align-items: center; justify-content: center; tex
 .bottom:has([data-act=checkNext]) .nav-btn { white-space: nowrap; padding: 0 6px; font-size: .95em; }
 .bottom .nav-btn[data-act=prev] { flex: .9; }
 .bottom .nav-btn[data-act=checkNext] { flex: 1.6; }
+.sugg-h { margin: 12px 0 6px; }
+.defects.sugg li { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
+.defects.sugg li .link { text-align: left; flex: 1; min-width: 0; }
+.sugg-add { flex: none; }
+.sugg-add.on { opacity: .7; }

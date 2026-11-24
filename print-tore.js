@@ -102,10 +102,11 @@ export function line(label, value, unit = '', cls = '') {
 }
 
 export function printDefectLines(insp, tpl) {
-  const items = tpl.sections.flatMap(s => s.items);
-  const out = items.filter(it => insp.answers[it.id]?.s === 'b').map(it => insp.answers[it.id].note ? `${it.label}: ${insp.answers[it.id].note}` : it.label);
-  if (insp.remarks) out.push(insp.remarks);
-  if (!out.length) out.push('Ohne Mängel');
+  // Nur, was in den Bemerkungen steht. B.-Punkte kommen nicht mehr automatisch hinein
+  // (ihre Notiz steht schon neben dem Kästchen); sie lassen sich in der App per Antippen übernehmen.
+  const out = (insp.remarks || '').split('\n').map(l => l.trim()).filter(Boolean);
+  const anyB = tpl.sections.some(s => s.items.some(it => insp.answers[it.id]?.s === 'b'));
+  if (!out.length && !anyB) out.push('Ohne Mängel');
   return out;
 }
 

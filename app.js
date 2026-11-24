@@ -739,13 +739,17 @@ function renderFinish() {
 
       <section class="card">
         <h2>Bemerkungen / Festgestellte Mängel</h2>
-        ${defects.length ? `<ol class="defects">${defects.map(it => {
+        <textarea class="field" rows="3" data-f="remarks" placeholder="${defects.length ? 'Bemerkungen für das Protokoll' : 'z. B. Ohne Mängel'}">${esc(insp.remarks)}</textarea>
+        ${!defects.length && !insp.remarks ? '<div class="chips"><button class="chip" data-act="remark" data-v="Ohne Mängel">Ohne Mängel</button></div>' : ''}
+        ${defects.length ? `<p class="muted small sugg-h">Punkte mit B. (die Notiz steht schon neben dem Kästchen). Bei Bedarf in die Bemerkungen übernehmen:</p>
+        <ol class="defects sugg">${defects.map(it => {
           const a = insp.answers[it.id];
           const sIdx = tpl.sections.findIndex(s => s.items.includes(it)) + 1;
-          return `<li><button class="link" data-act="goto" data-step="${sIdx}"><b>${esc(it.label)}</b>${a.note ? `: ${esc(a.note)}` : ''}${a.photos?.length ? ` <span class="pill">📷 ${a.photos.length}</span>` : ''}</button></li>`;
+          const txt = a.note ? `${it.label}: ${a.note}` : it.label;
+          const added = (insp.remarks || '').includes(txt);
+          return `<li><button class="link" data-act="goto" data-step="${sIdx}"><b>${esc(it.label)}</b>${a.note ? `: ${esc(a.note)}` : ''}${a.photos?.length ? ` <span class="pill">📷 ${a.photos.length}</span>` : ''}</button>
+            <button class="chip sugg-add ${added ? 'on' : ''}" data-act="addRemark" data-v="${esc(txt)}" ${added ? 'disabled' : ''}>${added ? '✓ übernommen' : '＋ übernehmen'}</button></li>`;
         }).join('')}</ol>` : ''}
-        <textarea class="field" rows="3" data-f="remarks" placeholder="${defects.length ? 'Weitere Bemerkungen' : 'z. B. Ohne Mängel'}">${esc(insp.remarks)}</textarea>
-        ${!defects.length && !insp.remarks ? '<div class="chips"><button class="chip" data-act="remark" data-v="Ohne Mängel">Ohne Mängel</button></div>' : ''}
         <label class="toggle"><input type="checkbox" data-f="angebot" ${insp.angebot ? 'checked' : ''}><span>Kunde bittet um Angebot</span></label>
       </section>
 
@@ -1500,6 +1504,7 @@ document.addEventListener('click', async (e) => {
       buzz(); return saveNow();
     }
     case 'remark': insp.remarks = b.dataset.v; saveNow(); return renderFinish();
+    case 'addRemark': insp.remarks = (insp.remarks?.trimEnd() ? insp.remarks.trimEnd() + '\n' : '') + b.dataset.v; saveNow(); return renderFinish();
     case 'sigClear': {
       insp.sig[b.dataset.who].img = null; saveNow(); return renderFinish();
     }
