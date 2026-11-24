@@ -243,3 +243,5 @@ html.desk .summary .tile b { font-size: 1.3em; }
 html.desk .sig-clear { min-height: 24px; padding: 2px 10px; font-size: .85em; }
 html.desk .sigwrap { max-width: none; }
 html.desk .defects { margin: 0 0 8px; padding-left: 1.3em; }
+.dn-foot { flex-wrap: wrap; gap: 3px; } .dn-foot .tb-btn.sm { padding: 0 6px; font-size: .84em; } .dn-foot { flex-wrap: nowrap; }
+.dn-foot .tb-btn.on { background: color-mix(in srgb, var(--brand) 13%, var(--card)); color: var(--brand); border-color: color-mix(in srgb, var(--brand) 40%, var(--line)); }

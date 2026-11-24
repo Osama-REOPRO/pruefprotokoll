@@ -1600,15 +1600,15 @@ async function renderNav() {
   nav.innerHTML = `
     <div class="dn-brand"><img src="icon.svg" alt=""> Prüfprotokolle</div>
     <a class="dn-item ${home ? 'on' : ''}" href="#/">▤ Übersicht</a>
-    <a class="dn-item ${isGuide(h) ? 'on' : ''}" href="#/handbuch">📖 Feldhandbuch</a>
     <div class="dn-h"><span>Offene Termine</span><button class="dn-add" data-act="newVisit" title="Neuer Termin">＋</button></div>
     ${open.map(vrow).join('') || '<p class="dn-empty">Keine offenen Termine</p>'}
     ${done.length ? `<div class="dn-h"><span>Erledigt</span></div>${done.map(vrow).join('')}` : ''}
     <div class="dn-foot">
+      <a class="tb-btn sm ${isGuide(h) ? 'on' : ''}" href="#/handbuch" title="Feldhandbuch">📖 Handbuch</a>
       <button class="tb-btn sm" data-act="lang" title="Sprache">${LANG === 'en' ? 'DE' : 'EN'}</button>
       <button class="tb-btn sm" data-act="theme" title="Darstellung">${{ hell: '☀︎', sonne: '◐', dunkel: '☾' }[settings.get('theme', 'hell')]}</button>
       <button class="tb-btn sm" data-act="size" title="Schriftgröße">A<small>A</small></button>
-      <button class="tb-btn sm" data-act="keys" title="Tastenkürzel">⌨ ?</button>
+      <button class="tb-btn sm" data-act="keys" title="Tastenkürzel">?</button>
     </div>`;
 }
 
