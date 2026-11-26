@@ -18,6 +18,8 @@ function unitOf(i) {
   const val = (k) => grp[k] ?? Object.values(h).find(g => g && g[k])?.[k];
   return { noun: u.noun, standort: val(u.standort), typ: val(u.typ), nr: val(u.nr), nrLabel: u.nrLabel };
 }
+// Kopfzeile: erst Nummer, dann Standort
+const unitHead = (u) => [u.nr && `${u.nrLabel} ${u.nr}`, u.standort].filter(Boolean).join(' · ') || u.noun;
 const unitSub = (u) => [u.typ, u.nr && `${u.nrLabel} ${u.nr}`].filter(Boolean).join(' · ');
 const $app = document.getElementById('app');
 // Laptop / PC (Maus, großer Bildschirm): eigene, dichte Oberfläche. Handy und Tablet bleiben unverändert.
@@ -291,7 +293,7 @@ async function routeInner() {
     insp = null; tpl = null; visit = null;
     releaseAwake();
     settings.set('last', null);
-    if (parts[0] === 'd' && parts[1]) return renderDoor(parts[1]);
+    if (parts[0] === 'd' && parts[1]) { loadLearn(); return renderDoor(parts[1]); }
     curDoor = null;
     if (parts[1]) { settings.set('doorFilter', { ...DF0, site: parts[1] }); history.replaceState(null, '', '#/o'); lastHash = '#/o'; }
     return renderDoors();
@@ -304,6 +306,7 @@ async function routeInner() {
       // Neue Angaben der Tür und jüngstes Protokoll (auch nachgetragenes Papier) übernehmen
       if (insp.gateId && insp.status !== 'done' && !insp.paper) await refreshFromDoor(insp);
       await loadTodos();
+      loadLearn();
       // Anzahl der Flügel steht jetzt unter Grunddaten Tür (früher bei Tür)
       if (insp.header?.tuer?.fluegel && !insp.header.grund?.fluegel) { (insp.header.grund ||= {}).fluegel = insp.header.tuer.fluegel; delete insp.header.tuer.fluegel; }
       // Name des Kunden-Unterzeichners vom letzten Tor dieses Termins vorschlagen
@@ -558,7 +561,7 @@ function topBar() {
       <button class="icon-btn" data-act="home" aria-label="Zur Übersicht">✕</button>
       <button class="bar-title as-btn" data-act="jump">
         <span class="small muted">${esc(inspTitle(insp))}</span>
-        <span class="t">${esc(unitOf(insp).standort || unitOf(insp).noun)} <span class="caret">▾</span></span>
+        <span class="t">${esc(unitHead(unitOf(insp)))} <span class="caret">▾</span></span>
       </button>
       <span id="saved" class="saved ok">✓ gespeichert</span>
       <button class="icon-btn" data-act="menu" data-for="insp" data-id="${insp.id}" aria-label="Mehr">⋯</button>
@@ -624,8 +627,7 @@ function renderHeader() {
           <span class="inwrap">
             <input class="field" data-h="${g.id}.${f.key}" value="${esc(vals[f.key])}"
               ${f.inputmode ? `inputmode="${f.inputmode}"` : ''} enterkeyhint="next" autocomplete="off"
-              ${f.hint ? `placeholder="${esc(f.hint)}"` : ''} ${DESK && f.suggest ? `list="dl-${g.id}-${f.key}"` : ''}>
-            ${DESK && f.suggest ? `<datalist id="dl-${g.id}-${f.key}">${f.suggest.map(x => `<option value="${esc(x)}">`).join('')}</datalist>` : ''}
+              ${f.hint ? `placeholder="${esc(f.hint)}"` : ''} ${learnable(g, f, tpl) ? `data-learn="${g.id}.${f.key}"` : ''}>
             ${f.unit ? `<span class="unit">${esc(f.unit)}</span>` : ''}
           </span>
           ${g.scope === 'gate' && !f.perInspection ? chgNote(g.id, f.key) : ''}
@@ -1996,7 +1998,7 @@ async function renderDoor(id) {
     return panel(esc(gr.title), `<div class="grid ${DESK ? 'dk-form' : ''}">${fields.map(f => f.type === 'choice' ? `
       <div class="fld"><span class="lbl">${esc(f.label)}</span><span class="chips opt">${f.options.map(o => `<button type="button" class="chip ${v[f.key] === o ? 'on' : ''}" data-act="gdchoice" data-h="${gr.id}.${f.key}" data-v="${esc(o)}">${esc(o)}</button>`).join('')}</span></div>` : `
       <label class="fld ${f.half ? 'half' : ''}"><span class="lbl">${esc(f.label)}</span><span class="inwrap">
-        <input class="field" data-gd="${gr.id}.${f.key}" value="${esc(v[f.key])}" ${f.inputmode ? `inputmode="${f.inputmode}"` : ''} enterkeyhint="next" autocomplete="off" ${f.hint ? `placeholder="${esc(f.hint)}"` : ''}>
+        <input class="field" data-gd="${gr.id}.${f.key}" ${learnable(gr, f, t) ? `data-learn="${gr.id}.${f.key}"` : ''} value="${esc(v[f.key])}" ${f.inputmode ? `inputmode="${f.inputmode}"` : ''} enterkeyhint="next" autocomplete="off" ${f.hint ? `placeholder="${esc(f.hint)}"` : ''}>
         ${f.unit ? `<span class="unit">${esc(f.unit)}</span>` : ''}</span></label>`).join('')}</div>`);
   }).join('');
   const vById = new Map(R.visits.map(v => [v.id, v]));
@@ -2184,6 +2186,53 @@ async function todoDel(id) {
 async function todoCounts() { const m = new Map(); for (const g of await db.all('gates')) { const n = (g.todos || []).filter(t => !t.done).length; if (n) m.set(g.id, n); } return m; }
 const todoPill = (n) => n ? `<span class="pill todo-pill" title="${n} Punkte zu prüfen">📌 ${n}</span>` : '';
 
+
+// ---------- Vorschläge aus früheren Einträgen ----------
+// Felder mit wiederkehrenden Werten (Hersteller, Typ, Antrieb …): alle bisherigen Werte aller Türen als Liste,
+// die beim Tippen enger wird. Nummern, Standort und Zahlenfelder bekommen keine Vorschläge.
+const learnable = (g, f, t) => g.scope === 'gate' && f.type !== 'choice' && !f.perInspection && !f.inputmode
+  && f.key !== t.unit.nr && f.key !== t.unit.standort && !/fabrNr|nr$/i.test(f.key);
+let learnVals = new Map();
+async function loadLearn() {
+  const cnt = new Map();
+  const add = (k, v, w) => { v = String(v ?? '').trim(); if (!v) return; const m = cnt.get(k) || new Map(); const key = v.toLowerCase(); const o = m.get(key) || { v, n: 0 }; o.n += w; m.set(key, o); cnt.set(k, m); };
+  for (const t of Object.values(TEMPLATES)) for (const g of t.header) for (const f of g.fields) (f.suggest || []).forEach(v => add(`${t.kind}|${g.id}.${f.key}`, v, 0.5));
+  for (const gate of await db.all('gates')) { const k = gateKind(gate); for (const [gid, grp] of Object.entries(gate.data || {})) for (const [key, v] of Object.entries(grp || {})) add(`${k}|${gid}.${key}`, v, 1); }
+  learnVals = new Map([...cnt].map(([k, m]) => [k, [...m.values()].sort((a, b) => b.n - a.n || a.v.localeCompare(b.v, 'de')).map(o => o.v)]));
+}
+const learnKind = () => tpl?.kind || (curDoor && gateKind(curDoor)) || 'tuer';
+let learnIdx = -1;
+function learnShow(inp) {
+  const q = normTxt(inp.value.trim());
+  const all = learnVals.get(`${learnKind()}|${inp.dataset.learn}`) || [];
+  const hits = all.filter(v => normTxt(v) !== q && (!q || normTxt(v).includes(q)))
+    .sort((a, b) => (q ? normTxt(b).startsWith(q) - normTxt(a).startsWith(q) : 0)).slice(0, 8);
+  let box = inp.parentElement.querySelector('.learn-sg');
+  if (!hits.length) { box?.remove(); return; }
+  if (!box) { box = document.createElement('div'); box.className = 'suggest learn-sg'; box.setAttribute('role', 'listbox'); inp.after(box); box.addEventListener('pointerdown', (e) => e.preventDefault()); }
+  learnIdx = -1;
+  box.innerHTML = hits.map((v, i) => `<button type="button" class="sg-item" role="option" data-act="learnPick" data-i="${i}" data-v="${esc(v)}">${esc(v)}</button>`).join('');
+}
+function learnPick(btn) {
+  const inp = btn.closest('.inwrap, .fld')?.querySelector('input[data-learn]'); if (!inp) return;
+  inp.value = btn.dataset.v;
+  btn.closest('.learn-sg')?.remove();
+  inp.dispatchEvent(new Event('input', { bubbles: true }));
+  inp.dispatchEvent(new Event('change', { bubbles: true }));
+  buzz();
+}
+document.addEventListener('focusin', (e) => { if (e.target.matches?.('input[data-learn]')) learnShow(e.target); });
+document.addEventListener('focusout', (e) => { if (e.target.matches?.('input[data-learn]')) setTimeout(() => e.target.parentElement?.querySelector('.learn-sg')?.remove(), 150); });
+document.addEventListener('input', (e) => { if (e.target.matches?.('input[data-learn]')) learnShow(e.target); });
+document.addEventListener('keydown', (e) => {
+  const inp = e.target; if (!inp.matches?.('input[data-learn]')) return;
+  const box = inp.parentElement.querySelector('.learn-sg'); if (!box) return;
+  const items = [...box.querySelectorAll('.sg-item')];
+  if (e.key === 'ArrowDown' || e.key === 'ArrowUp') { e.preventDefault(); e.stopImmediatePropagation(); learnIdx = (learnIdx + (e.key === 'ArrowDown' ? 1 : -1) + items.length) % items.length; items.forEach((x, i) => x.classList.toggle('on', i === learnIdx)); }
+  else if (e.key === 'Enter' && learnIdx >= 0) { e.preventDefault(); e.stopImmediatePropagation(); learnPick(items[learnIdx]); }
+  else if (e.key === 'Escape') { e.stopImmediatePropagation(); box.remove(); }
+}, true);
+
 // ---------- Druckansicht (wie das Papierformular) ----------
 async function renderPrint(ids, backHash) {
   let pages = '';
@@ -2276,6 +2325,7 @@ document.addEventListener('click', async (e) => {
     case 'prev': return go(stepBy(-1));
     case 'next': window.scrollTo(0, 0); return go(stepBy(1));
     case 'checkNext': if (!autoDone(step)) setMarked(step, true); saveNow(); window.scrollTo(0, 0); return go(stepBy(1));
+    case 'learnPick': return learnPick(b);
     case 'todoAdd': return todoAddSheet(b.dataset.ref, b.dataset.label, b.dataset.gid || null);
     case 'todoSave': return todoSave(b);
     case 'todoDone': return todoSetDone(b.dataset.id, true);
@@ -2471,8 +2521,8 @@ document.addEventListener('input', (e) => {
     updChgNote(g, k);
     if (DESK) { // Titel oben und links mitführen, die Seite wird nicht neu aufgebaut
       const u = unitOf(insp), bt = document.querySelector('.bar .bar-title .t'), nt = document.querySelector('.dn-title b');
-      if (bt?.firstChild) bt.firstChild.textContent = `${u.standort || u.noun} `;
-      if (nt) nt.textContent = u.standort || `${u.noun} ohne Standort`;
+      if (bt?.firstChild) bt.firstChild.textContent = `${unitHead(u)} `;
+      if (nt) nt.textContent = [u.nr && `${u.nrLabel} ${u.nr}`, u.standort || `${u.noun} ohne Standort`].filter(Boolean).join(' · ');
     }
     return saveSoon();
   }
@@ -2608,7 +2658,7 @@ async function renderNav() {
     const u = unitOf(insp);
     nav.innerHTML = `
       <button class="dn-back" data-act="home">‹ ${insp.paper ? 'Zurück' : insp.visitId ? 'Zum Termin' : 'Übersicht'}</button>
-      <div class="dn-title"><b>${esc(u.standort || `${u.noun} ohne Standort`)}</b><span>${esc(u.noun)} · ${esc(inspTitle(insp))}</span></div>
+      <div class="dn-title"><b>${esc([u.nr && `${u.nrLabel} ${u.nr}`, u.standort || `${u.noun} ohne Standort`].filter(Boolean).join(' · '))}</b><span>${esc(u.noun)} · ${esc(inspTitle(insp))}</span></div>
       ${sideSteps()}`;
     return;
   }

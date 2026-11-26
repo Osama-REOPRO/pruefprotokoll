@@ -301,3 +301,4 @@ html.desk .sec-sw.on .sw i { left: 18px; }
 html.desk .todo-wrap { padding: 6px 14px; }
 html.desk .todo-card { margin-bottom: 12px; }
 html.desk .dc-lbl .todo-box { font-size: .95em; }
+html.desk .learn-sg { left: 0 !important; right: 0; }

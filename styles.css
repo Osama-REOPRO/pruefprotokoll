@@ -441,3 +441,6 @@ a.big-btn.as-a { display: flex; margin-bottom: 12px; }
 .todo-done summary { cursor: pointer; padding: 6px 0; }
 .pill.todo-pill { background: var(--amber-bg); color: var(--amber); }
 .push-r { margin-left: auto; text-transform: none; letter-spacing: 0; }
+/* Vorschläge aus früheren Einträgen */
+.inwrap { position: relative; }
+.learn-sg { max-height: 320px; overflow-y: auto; }
