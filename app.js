@@ -2533,7 +2533,7 @@ function floorsEditor(st) {
     ${top.map((f, i) => `<div class="fl-row"><input class="field sm" data-flname="${st.id}:${f.id}" value="${esc(f.name)}" autocomplete="off">
       <button class="mini-x" data-act="flMove" data-site="${st.id}" data-id="${f.id}" data-d="1" ${i === 0 ? 'disabled' : ''} aria-label="Nach oben" title="Eine Etage höher">↑</button>
       <button class="mini-x" data-act="flMove" data-site="${st.id}" data-id="${f.id}" data-d="-1" ${i === top.length - 1 ? 'disabled' : ''} aria-label="Nach unten" title="Eine Etage tiefer">↓</button>
-      ${f.map ? `<button class="mini-x plan-b on" data-act="planGo" data-site="${st.id}" data-id="${f.id}" title="Plan öffnen" aria-label="Plan öffnen">🗺</button>` : planUpBtn(st.id, f.id, '＋ Plan', 'mini-x plan-b')}
+      ${f.map ? `<button class="mini-x plan-b on" data-act="planGo" data-site="${st.id}" data-id="${f.id}" title="Plan öffnen" aria-label="Plan öffnen">🗺</button>` : planPickBtn(st.id, f.id, '＋ Plan', 'mini-x plan-b')}
       <button class="mini-x" data-act="flDel" data-site="${st.id}" data-id="${f.id}" aria-label="Löschen">×</button></div>`).join('') || '<p class="muted small">Noch keine Etagen.</p>'}
     <div class="chips">${FLOOR_QUICK.filter(n => !fl.some(f => normTxt(f.name).replace(/[\s.]/g, '') === normTxt(n).replace(/[\s.]/g, ''))).map(n => `<button class="chip" data-act="flAdd" data-site="${st.id}" data-v="${esc(n)}">＋ ${esc(n)}</button>`).join('')}
       <button class="chip" data-act="flAddAsk" data-site="${st.id}">＋ andere …</button></div></div>`;
@@ -2553,7 +2553,19 @@ async function flUpdate(siteId, fn) {
 let planCtl = null, planUrl = null, planCur = null;
 const FINE = matchMedia('(hover: hover) and (pointer: fine)');
 function planClose() { planCtl?.destroy(); planCtl = null; planCur = null; if (planUrl) { URL.revokeObjectURL(planUrl); planUrl = null; } document.documentElement.classList.remove('pv-open'); }
-const planUpBtn = (sid, fid, label, cls = 'chip') => `<label class="${cls} plan-up">${label}<input type="file" accept="image/*" data-planup="${sid}:${fid}" hidden></label>`;
+// cam: direkt die Kamera öffnen (Handy / Tablet)
+const planUpBtn = (sid, fid, label, cls = 'chip', cam = false) => `<label class="${cls} plan-up">${label}<input type="file" accept="image/*" ${cam ? 'capture="environment"' : ''} data-planup="${sid}:${fid}" hidden></label>`;
+// Auf Touch-Geräten: Foto aufnehmen oder Bild wählen; am PC direkt die Dateiauswahl
+const planPickBtn = (sid, fid, label, cls) => FINE.matches ? planUpBtn(sid, fid, label, cls) : `<button class="${cls}" data-act="planAdd" data-site="${sid}" data-id="${fid}">${label}</button>`;
+const planSources = (sid, fid, cls = 'big-btn') => FINE.matches ? planUpBtn(sid, fid, '🖼 Bild wählen', cls)
+  : `${planUpBtn(sid, fid, '📷 Foto aufnehmen', cls + ' primary', true)}${planUpBtn(sid, fid, '🖼 Bild aus Galerie oder Dateien', cls)}`;
+function planAdd(sid, fid) {
+  const sheet = document.getElementById('sheet');
+  sheet.innerHTML = `<div class="sheet-inner"><div class="sheet-grab"></div><h2 class="sheet-h">Plan für diese Etage</h2>
+    <p class="muted small">Den Grundriss möglichst gerade von oben fotografieren, z. B. den Fluchtplan an der Wand.</p>
+    ${planSources(sid, fid)}<button class="big-btn" data-act="cancelDel">Abbrechen</button></div>`;
+  sheet.classList.add('show');
+}
 async function renderPlan(sid, fid) {
   planClose();
   const st = await db.get('sites', sid); if (!st) { location.hash = '#/o'; return; }
@@ -2583,7 +2595,7 @@ async function renderPlan(sid, fid) {
       ${ctrls}
       <p class="pv-ui pv-hint" id="pvHint">${fine ? 'Ziehen: verschieben · Mausrad: zoomen · Umschalt + Rad oder rechte Maustaste ziehen: drehen' : 'Ein Finger: verschieben<br>Zwei Finger: zoomen und drehen<br>Doppeltippen: näher'}</p>`
     : `<div class="pv-empty"><p>Für <b>${esc(f.name)}</b> gibt es noch keinen Plan.</p><p class="muted small">Ein Foto oder Bild des Grundrisses wählen. Es bleibt nur auf diesem Gerät gespeichert und wird mit Terminen mitgeschickt.</p>
-      ${planUpBtn(sid, f.id, '🖼 Bild für den Plan wählen', 'big-btn primary')}</div>`}
+      <div class="pv-src">${FINE.matches ? planUpBtn(sid, f.id, '🖼 Bild für den Plan wählen', 'big-btn primary') : planSources(sid, f.id)}</div></div>`}
   </div>`;
   document.documentElement.classList.add('pv-open');
   if (!ph) return;
@@ -2632,7 +2644,7 @@ function planMenu(sid, fid, confirm = false) {
   sheet.innerHTML = `<div class="sheet-inner">
     <div class="sheet-grab"></div>
     <h2 class="sheet-h">Plan dieser Etage</h2>
-    ${planUpBtn(sid, fid, '🖼 Anderes Bild wählen', 'big-btn')}
+    ${FINE.matches ? planUpBtn(sid, fid, '🖼 Anderes Bild wählen', 'big-btn') : `${planUpBtn(sid, fid, '📷 Neues Foto aufnehmen', 'big-btn', true)}${planUpBtn(sid, fid, '🖼 Anderes Bild wählen', 'big-btn')}`}
     ${confirm ? `<p class="muted">Der Plan wird von diesem Gerät gelöscht. Die Etage und ihre Türen bleiben.</p><button class="big-btn danger solid" data-act="planDel" data-site="${sid}" data-id="${fid}">🗑 Plan endgültig entfernen</button>`
       : `<button class="big-btn danger-row" data-act="planDelAsk" data-site="${sid}" data-id="${fid}">🗑 Plan entfernen</button>`}
     <button class="big-btn" data-act="cancelDel">Abbrechen</button>
@@ -2768,6 +2780,7 @@ document.addEventListener('click', async (e) => {
     case 'flDel': return flUpdate(b.dataset.site, (st) => { const f = floorsOf(st).find(x => x.id === b.dataset.id); if (f?.map?.photoId) db.del('photos', f.map.photoId); st.etagen = floorsOf(st).filter(x => x.id !== b.dataset.id); });
     case 'planGo': closeJump(); return location.hash.startsWith('#/plan/') ? location.replace(`#/plan/${b.dataset.site}/${b.dataset.id}`) : (location.hash = `#/plan/${b.dataset.site}/${b.dataset.id}`);
     case 'planMenu': return planMenu(b.dataset.site, b.dataset.id);
+    case 'planAdd': return planAdd(b.dataset.site, b.dataset.id);
     case 'planDelAsk': return planMenu(b.dataset.site, b.dataset.id, true);
     case 'planDel': return planRemove(b.dataset.site, b.dataset.id);
     case 'pvZoom': return +b.dataset.d > 0 ? planCtl?.zoomIn() : planCtl?.zoomOut();
