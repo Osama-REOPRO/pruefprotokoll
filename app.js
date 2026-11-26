@@ -635,6 +635,7 @@ function renderHeader() {
           ${todoBox(`h:${g.id}.${f.key}`)}
           ${f.suggest && !DESK ? `<span class="chips">${f.suggest.map(s => `<button type="button" class="chip" data-act="fill" data-h="${g.id}.${f.key}" data-v="${esc(s)}">${esc(s)}</button>`).join('')}</span>` : ''}
         </label>`).join('')}
+      ${g.id === tpl.unit.group && insp.gateId && insp.siteId ? `<label class="fld half"><span class="lbl">Etage</span>${etageSelect(ctxSite, ctxEtage, insp.gateId)}</label>` : ''}
       </div>
     </section>`;
   }).join('');
@@ -1862,7 +1863,7 @@ function doorScore(g, q, R) {
   const s = R.sById.get(g.siteId) || {}, c = R.cById.get(g.customerId) || {};
   let sc = 0;
   if (nr && nq) sc = nr === nq ? 100 : nr.startsWith(nq) ? 60 : nr.includes(nq) ? 40 : 0;
-  const hay = normTxt([u.nr, u.standort, u.typ, gg.hersteller, gg.fabrNr, u.noun, s.name, s.strasse, s.plzOrt, c.name].join(' '));
+  const hay = normTxt([u.nr, u.standort, u.typ, gg.hersteller, gg.fabrNr, u.noun, s.name, s.strasse, s.plzOrt, c.name, floorName(s, g.etageId)].join(' '));
   if (toks.every(t => hay.includes(t))) sc = Math.max(sc, 10);
   return sc;
 }
@@ -1879,15 +1880,15 @@ function doorRow(g, R, { site = false, kunde = false, sel = false, dup = false }
   const u = gateUnit(g), s = R.sById.get(g.siteId), c = R.cById.get(g.customerId);
   const cb = sel ? `<input type="checkbox" class="sel-in" data-sel="${g.id}" ${selDoors.has(g.id) ? 'checked' : ''} aria-label="Auswählen">` : '';
   if (DESK) return `<tr class="dt-click" data-act="openDoor" data-id="${g.id}">${sel ? `<td class="cb">${cb}</td>` : ''}
-    <td class="nw"><b>${esc(u.nr || '')}</b></td><td><span class="kind-tag ${gateKind(g)}">${esc(u.noun)}</span></td>
+    <td class="nw"><b>${esc(u.nr || '')}</b></td><td><span class="kind-tag ${gateKind(g)}">${esc(u.noun)}</span></td><td class="nw">${esc(floorName(s, g.etageId))}</td>
     <td><b>${esc(u.standort || '–')}</b>${dup ? ' ' + regDupPill : ''}</td><td>${esc(u.typ || '')}</td>
     ${site ? `<td>${esc(sname(s))}</td>` : ''}${kunde ? `<td>${esc(c?.name || '')}</td>` : ''}<td class="nw">${lastPill(g)}</td></tr>`;
   return `<div class="gate-line">${sel ? `<label class="sel-cb">${cb}</label>` : ''}<button class="gate-row door-row" data-act="openDoor" data-id="${g.id}">
     <span class="gate-txt"><b>${u.nr ? `<span class="nr-tag">${esc(u.nr)}</span> ` : ''}${esc(u.standort || `${u.noun} ohne Standort`)}</b>${dup ? ' ' + regDupPill : ''}<br>
-    <span class="muted small"><span class="kind">${esc(u.noun)}</span> ${esc([u.typ, site && sname(s), kunde && c?.name].filter(Boolean).join(' · '))}</span></span>
+    <span class="muted small"><span class="kind">${esc(u.noun)}</span> ${esc([floorName(s, g.etageId), u.typ, site && sname(s), kunde && c?.name].filter(Boolean).join(' · '))}</span></span>
     ${lastPill(g)}</button></div>`;
 }
-const doorHead = ({ site = false, kunde = false, sel = false } = {}) => `<thead><tr>${sel ? '<th class="cb"></th>' : ''}<th>Nr.</th><th>Art</th><th>Standort / Lage</th><th>Typ</th>${site ? '<th>Objekt</th>' : ''}${kunde ? '<th>Kunde</th>' : ''}<th>Zuletzt geprüft</th></tr></thead>`;
+const doorHead = ({ site = false, kunde = false, sel = false } = {}) => `<thead><tr>${sel ? '<th class="cb"></th>' : ''}<th>Nr.</th><th>Art</th><th>Etage</th><th>Standort / Lage</th><th>Typ</th>${site ? '<th>Objekt</th>' : ''}${kunde ? '<th>Kunde</th>' : ''}<th>Zuletzt geprüft</th></tr></thead>`;
 const doorTable = (rows, opts) => DESK ? `<table class="dt">${doorHead(opts)}<tbody>${rows}</tbody></table>` : rows;
 const regBar = (back, title, sub, right = '') => DESK
   ? `<header class="bar dk-tb">${back ? `<button class="tb-btn icon" data-act="menuGo" data-href="${back}" title="Zurück">‹</button>` : ''}<div class="bar-title"><span class="t">${title}</span>${sub ? `<span class="sub">${sub}</span>` : ''}</div>${right}</header>`
@@ -1895,7 +1896,7 @@ const regBar = (back, title, sub, right = '') => DESK
 const panel = (h, body, cls = '') => DESK ? `<section class="dk-panel ${cls}"><h2>${h}</h2>${body}</section>` : `<section class="card ${cls}"><h2>${h}</h2>${body}</section>`;
 
 // Eine Liste aller Türen und Tore. Objekt, Kunde, Art und Hersteller sind Filter, frei kombinierbar.
-const DF0 = { site: '', kunde: '', kind: '', herst: '' };
+const DF0 = { site: '', kunde: '', kind: '', herst: '', etage: '' };
 const getDF = () => ({ ...DF0, ...(settings.get('doorFilter', {}) || {}) });
 const herstOf = (g) => { const d = g.data || {}; return (d.tor || d.grund || {}).hersteller || Object.values(d).find(x => x?.hersteller)?.hersteller || ''; };
 async function renderDoors() {
@@ -1906,7 +1907,9 @@ async function renderDoors() {
   if (F.kunde) kIds.add(F.kunde);
   const kunden = R.custs.filter(c => c.name && (kIds.has(c.id) || (!F.site && R.sites.some(x => x.customerId === c.id)))).sort((a, b) => a.name.localeCompare(b.name, 'de'));
   const hersts = uniq(R.gates.map(herstOf)).sort((a, b) => a.localeCompare(b, 'de'));
-  let list = R.gates.filter(g => (!F.site || g.siteId === F.site) && (!F.kunde || g.customerId === F.kunde) && (!F.kind || gateKind(g) === F.kind) && (!F.herst || herstOf(g) === F.herst));
+  const fSiteRec = F.site && R.sById.get(F.site), floors = floorsOf(fSiteRec), fIds = new Set(floors.map(f => f.id));
+  const etOk = (g) => !F.site || !F.etage || (F.etage === 'none' ? !fIds.has(g.etageId) : g.etageId === F.etage);
+  let list = R.gates.filter(g => (!F.site || g.siteId === F.site) && (!F.kunde || g.customerId === F.kunde) && (!F.kind || gateKind(g) === F.kind) && (!F.herst || herstOf(g) === F.herst) && etOk(g));
   const total = list.length;
   list = q ? list.map(g => [g, doorScore(g, q, R)]).filter(([, sc]) => sc > 0).sort((a, b) => b[1] - a[1] || byNr(a[0], b[0])).map(([g]) => g)
     : list.sort((a, b) => sname(R.sById.get(a.siteId)).localeCompare(sname(R.sById.get(b.siteId)), 'de') || byNr(a, b));
@@ -1916,6 +1919,7 @@ async function renderDoors() {
   const anyF = Object.values(F).some(Boolean);
   const filters = `<div class="flt-bar">
     ${sel('site', 'Objekt', sitesUsed.map(x => [x.id, sname(x)]))}
+    ${F.site ? sel('etage', 'Etage', [...floors.map(f => [f.id, f.name]), ['none', 'ohne Etage']]) : ''}
     ${sel('kunde', 'Kunde', kunden.map(c => [c.id, c.name]))}
     ${sel('kind', 'Art', [['tuer', 'Türen'], ['tor', 'Tore']])}
     ${hersts.length ? sel('herst', 'Hersteller', hersts.map(h => [h, h])) : ''}
@@ -1933,12 +1937,20 @@ async function renderDoors() {
       ${filters}
       ${info}
       ${panel(`${F.kind === 'tor' ? 'Tore' : F.kind === 'tuer' ? 'Türen' : 'Türen und Tore'} <span class="muted small">${count}</span>`, list.length
-        ? doorTable(list.map(g => doorRow(g, R, { ...opts, dup: dups.has(g.id) })).join(''), opts)
+        ? doorTable(groupByFloor(list, F, q, floors, fIds).map(([h, gs]) => (h ? (DESK ? `<tr class="dt-group"><td colspan="12"><b>${esc(h)}</b> <span class="muted">${gs.length}</span></td></tr>` : `<h3 class="pair-h fl-h">${esc(h)} <span class="muted small">${gs.length}</span></h3>`) : '')
+            + gs.map(g => doorRow(g, R, { ...opts, dup: dups.has(g.id) })).join('')).join(''), opts)
         : `<p class="${DESK ? 'dk-empty' : 'muted'}">${total || q ? 'Nichts passt zu Suche und Filtern.' : R.gates.length ? 'Keine Tür passt zu den Filtern.' : 'Noch keine Türen. Mit „＋ Tür“ anlegen und dann die alten Papierprotokolle nachtragen. Türen aus Terminen erscheinen hier automatisch.'}</p>`)}
       ${DESK ? '' : `<div class="two">${addBtns('big-btn primary')}</div>`}
     </main>
     <div class="sel-bar ${selDoors.size ? '' : 'hidden'}" id="selBar"><span id="selN">${selDoors.size} ausgewählt</span>
       <button class="sel-b primary" data-act="moveDoorsAsk">Kunde ändern ›</button><button class="sel-b" data-act="selClear">Aufheben</button></div>`;
+}
+// Ein Objekt gewählt und nicht gesucht: Türen nach Etage gruppiert, von oben nach unten wie im Haus
+function groupByFloor(list, F, q, floors, fIds) {
+  if (!F.site || q || !floors.length) return [[null, list]];
+  const groups = floors.slice().reverse().map(f => [f.name, list.filter(g => g.etageId === f.id)]);
+  groups.push(['Ohne Etage', list.filter(g => !fIds.has(g.etageId))]);
+  return groups.filter(([, gs]) => gs.length);
 }
 // Neue Tür: Objekt und Kunde kommen aus den Filtern, sonst kurz fragen
 async function newDoorAsk(kind) {
@@ -1978,6 +1990,7 @@ async function editSite(sid) {
     <div class="sheet-grab"></div>
     <h2 class="sheet-h">Objekt</h2>
     <div class="grid">${og.fields.map(f => `<label class="fld ${f.half ? 'half' : ''}"><span class="lbl">${esc(f.label)}</span><input class="field" data-os="${f.key}" data-sid="${sid}" value="${esc(st[f.key])}" autocomplete="off"></label>`).join('')}</div>
+    ${floorsEditor(st)}
     <label class="fld inote"><span class="lbl">🔒 Interne Notiz (nur für uns)</span><textarea class="field" rows="3" data-inote="sites:${sid}">${esc(st.intNote || '')}</textarea></label>
     <p class="muted small">Gilt für alle Türen an diesem Objekt. Fertige Protokolle behalten die Angaben von damals.</p>
     <button class="big-btn primary" data-act="kundeDone">Fertig</button>
@@ -2028,6 +2041,7 @@ async function renderDoor(id) {
         <div class="dup-acts">${twins.map(x => `<button class="dup-b" data-act="openDoor" data-id="${x.id}">Zur anderen: ${esc(x.standort || 'ohne Standort')} ›</button>`).join('')}</div></div>` : ''}
       <section class="${DESK ? 'dk-sum' : 'card'} door-who">
         <span><span class="muted">Objekt</span> <button class="link" data-act="openSite" data-id="${g.siteId}" title="Alle Türen an diesem Objekt">${esc(sname(st))}</button> <button class="mini-link" data-act="editSite" data-id="${g.siteId}">✎</button></span>
+        <span class="door-et"><span class="muted">Etage</span> ${etageSelect(st, g.etageId, g.id)}</span>
         <span><span class="muted">Kunde</span> <b>${esc(c?.name || 'kein Kunde')}</b> <button class="mini-link" data-act="moveDoorsAsk" data-id="${g.id}">ändern</button>${c ? ` <button class="mini-link" data-act="editKunde" data-id="${c.id}">✎</button>` : ''}</span>
       </section>
       ${DESK ? '' : `<button class="big-btn primary" data-act="paperNew" data-id="${g.id}">📄 Altes Protokoll (Papier) nachtragen</button>`}
@@ -2275,7 +2289,91 @@ function saveINote(key, val) {
 }
 async function loadCtxNotes() {
   const [g, st, c] = await Promise.all([insp?.gateId && db.get('gates', insp.gateId), insp?.siteId && db.get('sites', insp.siteId), insp?.customerId && db.get('customers', insp.customerId)]);
+  ctxSite = st || null; ctxEtage = g?.etageId || null;
   ctxNotes = { gates: g?.intNote || '', sites: st?.intNote || '', customers: c?.intNote || '', visits: insp?.visitId ? (await db.get('visits', insp.visitId))?.intNote || '' : '' };
+}
+
+
+// ---------- Etagen ----------
+// Jedes Objekt hat eine geordnete Liste von Etagen: site.etagen = [{ id, name, order }].
+// Eine Tür zeigt mit gate.etageId auf eine davon. Später kann jede Etage einen Plan bekommen (z. B. etage.map)
+// und jede Tür ihre Lage darauf (z. B. gate.pos = { etageId, x, y }), ohne dass sich hier etwas ändert.
+function floorRank(name) {
+  const n = normTxt(name).replace(/[\s.]+/g, ''); let m;
+  if ((m = n.match(/^(\d+)(ug|kg|untergeschoss|keller)/))) return -Number(m[1]);
+  if (/^(ug|kg|keller|untergeschoss|souterrain)/.test(n)) return -1;
+  if (/^(eg|erdgeschoss|hochparterre|hp|parterre)/.test(n)) return 0;
+  if ((m = n.match(/^(\d+)(og|obergeschoss|etage|stock)/))) return Number(m[1]);
+  if (/^(dg|dach)/.test(n)) return 90;
+  return null;
+}
+const floorsOf = (site) => (site?.etagen || []).slice().sort((a, b) => a.order - b.order || a.name.localeCompare(b.name, 'de', { numeric: true }));
+const floorName = (site, id) => floorsOf(site).find(f => f.id === id)?.name || '';
+const FLOOR_QUICK = ['2. UG', 'UG', 'EG', '1. OG', '2. OG', '3. OG', '4. OG', 'DG'];
+function addFloor(site, name) {
+  name = name.trim(); if (!name) return null;
+  const fl = floorsOf(site), same = fl.find(f => normTxt(f.name).replace(/[\s.]/g, '') === normTxt(name).replace(/[\s.]/g, ''));
+  if (same) return same;
+  // Nach Geschoss einsortieren (UG unter EG unter 1. OG …), unbekannte Namen ans Ende
+  const r = floorRank(name), f = { id: uid(), name, order: 0 };
+  const at = r == null ? -1 : fl.findIndex(x => (floorRank(x.name) ?? Infinity) > r);
+  at < 0 ? fl.push(f) : fl.splice(at, 0, f);
+  fl.forEach((x, k) => { x.order = k; });
+  site.etagen = fl;
+  return f;
+}
+function etageSelect(site, cur, gid) {
+  return `<select class="field" data-etage="${gid}"><option value="">– keine Etage –</option>${floorsOf(site).map(f => `<option value="${f.id}" ${f.id === cur ? 'selected' : ''}>${esc(f.name)}</option>`).join('')}<option value="__new">＋ Neue Etage …</option></select>`;
+}
+async function setDoorEtage(gid, eid) {
+  const g = await db.get('gates', gid); if (!g) return;
+  const st = await db.get('sites', g.siteId);
+  const from = floorName(st, g.etageId), to = floorName(st, eid);
+  if ((g.etageId || '') === (eid || '')) return;
+  if (from) logDoor(g, [{ field: 'Etage', from, to: to || '(keine)' }], insp ? `Prüfung vom ${insp.datum || todayDE()}` : 'von Hand geändert');
+  g.etageId = eid || null;
+  await saveGate(g);
+  if (curDoor?.id === gid) Object.assign(curDoor, { etageId: g.etageId, log: g.log });
+  if (insp?.gateId === gid) ctxEtage = g.etageId;
+}
+let ctxSite = null, ctxEtage = null;
+function askNewEtage(siteId, gid) {
+  const sheet = document.getElementById('sheet');
+  sheet.innerHTML = `<div class="sheet-inner">
+    <div class="sheet-grab"></div>
+    <h2 class="sheet-h">Neue Etage</h2>
+    <input class="field" id="etName" placeholder="z. B. 1. OG, Zwischengeschoss, Halle 2" autocomplete="off">
+    <div class="chips">${FLOOR_QUICK.map(n => `<button class="chip" data-act="etQuick" data-v="${esc(n)}">${esc(n)}</button>`).join('')}</div>
+    <button class="big-btn primary" data-act="etSave" data-site="${siteId}" data-gid="${gid || ''}">Anlegen</button>
+    <button class="big-btn" data-act="etCancel">Abbrechen</button>
+  </div>`;
+  sheet.classList.add('show');
+  setTimeout(() => document.getElementById('etName')?.focus(), 50);
+}
+async function etSave(siteId, gid, name) {
+  const st = await db.get('sites', siteId); if (!st || !name.trim()) return;
+  const f = addFloor(st, name); await db.put('sites', st);
+  if (gid) await setDoorEtage(gid, f.id);
+  closeJump();
+  if (insp) { await loadCtxNotes(); renderStepKeepScroll(); } else route();
+}
+// Etagen eines Objekts verwalten (im Objekt-Fenster)
+function floorsEditor(st) {
+  const fl = floorsOf(st);
+  return `<div class="fl-edit"><span class="lbl">Etagen <span class="muted small">(Reihenfolge von unten nach oben)</span></span>
+    ${fl.map((f, i) => `<div class="fl-row"><input class="field sm" data-flname="${st.id}:${f.id}" value="${esc(f.name)}" autocomplete="off">
+      <button class="mini-x" data-act="flMove" data-site="${st.id}" data-id="${f.id}" data-d="-1" ${i === 0 ? 'disabled' : ''} aria-label="Nach unten">↓</button>
+      <button class="mini-x" data-act="flMove" data-site="${st.id}" data-id="${f.id}" data-d="1" ${i === fl.length - 1 ? 'disabled' : ''} aria-label="Nach oben">↑</button>
+      <button class="mini-x" data-act="flDel" data-site="${st.id}" data-id="${f.id}" aria-label="Löschen">×</button></div>`).join('') || '<p class="muted small">Noch keine Etagen.</p>'}
+    <div class="chips">${FLOOR_QUICK.filter(n => !fl.some(f => normTxt(f.name).replace(/[\s.]/g, '') === normTxt(n).replace(/[\s.]/g, ''))).map(n => `<button class="chip" data-act="flAdd" data-site="${st.id}" data-v="${esc(n)}">＋ ${esc(n)}</button>`).join('')}
+      <button class="chip" data-act="flAddAsk" data-site="${st.id}">＋ andere …</button></div></div>`;
+}
+let flChain = Promise.resolve();
+async function flUpdate(siteId, fn) {
+  await flChain; await ckChain;
+  const st = await db.get('sites', siteId); if (!st) return;
+  fn(st); await db.put('sites', st);
+  const box = document.querySelector('.fl-edit'); if (box) box.outerHTML = floorsEditor(st);
 }
 
 // ---------- Druckansicht (wie das Papierformular) ----------
@@ -2371,7 +2469,15 @@ document.addEventListener('click', async (e) => {
     case 'next': window.scrollTo(0, 0); return go(stepBy(1));
     case 'checkNext': if (!autoDone(step)) setMarked(step, true); saveNow(); window.scrollTo(0, 0); return go(stepBy(1));
     case 'inoteOpen': { openINotes.add(b.dataset.key); const [st, id] = b.dataset.key.split(':'); const lab = document.createElement('div'); lab.innerHTML = noteField(st, id, '', b.dataset.label); const card = b.closest('.inote-card'); const chips = b.closest('.inote-chips'); const el = lab.firstElementChild; (chips || b).before(el); b.remove(); if (chips && !chips.querySelector('.inote-add')) chips.remove(); el.querySelector('textarea')?.focus(); return; }
-    case 'kundeDone': await inoteChain; await ckChain; closeJump(); return route();
+    case 'kundeDone': await inoteChain; await ckChain; await flChain; closeJump(); if (insp) { await loadCtxNotes(); return renderStepKeepScroll(); } return route();
+    case 'etQuick': { const i = document.getElementById('etName'); if (i) i.value = b.dataset.v; return; }
+    case 'etSave': return etSave(b.dataset.site, b.dataset.gid, document.getElementById('etName')?.value || '');
+    case 'etCancel': closeJump(); return;
+    case 'flAdd': return flUpdate(b.dataset.site, (st) => addFloor(st, b.dataset.v));
+    case 'flAddAsk': { const name = (document.querySelector('.fl-new')?.value) || ''; if (name) return flUpdate(b.dataset.site, (st) => addFloor(st, name));
+      const box = b.closest('.chips'); box.insertAdjacentHTML('afterend', `<div class="fl-row"><input class="field sm fl-new" placeholder="Name der Etage" autocomplete="off"><button class="mini-x" data-act="flAddAsk" data-site="${b.dataset.site}">＋</button></div>`); box.nextElementSibling.querySelector('input').focus(); return; }
+    case 'flMove': return flUpdate(b.dataset.site, (st) => { const fl = floorsOf(st); const i = fl.findIndex(f => f.id === b.dataset.id), j = i + (+b.dataset.d); if (j < 0 || j >= fl.length) return; [fl[i], fl[j]] = [fl[j], fl[i]]; fl.forEach((f, k) => { f.order = k; }); st.etagen = fl; });
+    case 'flDel': return flUpdate(b.dataset.site, (st) => { st.etagen = floorsOf(st).filter(f => f.id !== b.dataset.id); });
     case 'learnPick': return learnPick(b);
     case 'todoAdd': return todoAddSheet(b.dataset.ref, b.dataset.label, b.dataset.gid || null);
     case 'todoSave': return todoSave(b);
@@ -2553,6 +2659,7 @@ document.addEventListener('input', (e) => {
   if (t.id === 'regSearch') { regQuery = t.value; return rerenderKeepFocus(t.id, renderDoors); }
   if (t.id === 'kpSearch') return drawKp(t.value);
   if (t.dataset.inote) return saveINote(t.dataset.inote, t.value);
+  if (t.dataset.flname) { const [sid, fid] = t.dataset.flname.split(':'), val = t.value; flChain = flChain.then(async () => { const st = await db.get('sites', sid); const f = st?.etagen?.find(x => x.id === fid); if (f && val.trim()) { f.name = val.trim(); await db.put('sites', st); } }); return; }
   if (t.dataset.sel) { t.checked ? selDoors.add(t.dataset.sel) : selDoors.delete(t.dataset.sel); return updSelBar(); }
   if (t.dataset.os) { const id = t.dataset.sid, k = t.dataset.os, val = t.value; ckChain = ckChain.then(async () => { const x = await db.get('sites', id); if (x) { x[k] = val; await db.put('sites', x); } }); return; }
   if (t.id === 'ndSite') document.getElementById('ndSiteNew').classList.toggle('hidden', !!t.value);
@@ -2582,7 +2689,12 @@ document.addEventListener('input', (e) => {
 let ckChain = Promise.resolve();
 document.addEventListener('change', (e) => {
   if (e.target.dataset?.gd) logDoorEdit(e.target.dataset.gd);
-  if (e.target.dataset?.flt !== undefined) { const F = getDF(); F[e.target.dataset.flt] = e.target.value; if (e.target.dataset.flt === 'site') F.kunde = ''; settings.set('doorFilter', F); selDoors = new Set(); return renderDoors(); }
+  if (e.target.dataset?.etage) {
+    const gid = e.target.dataset.etage, v = e.target.value;
+    if (v === '__new') { e.target.value = (insp ? ctxEtage : curDoor?.etageId) || ''; const sid = insp ? insp.siteId : curDoor?.siteId; return askNewEtage(sid, gid); }
+    return setDoorEtage(gid, v).then(() => { buzz(); if (!insp) { const y = scrollY; renderDoor(gid).then(() => window.scrollTo(0, y)); } });
+  }
+  if (e.target.dataset?.flt !== undefined) { const F = getDF(); F[e.target.dataset.flt] = e.target.value; if (e.target.dataset.flt === 'site') { F.kunde = ''; F.etage = ''; } settings.set('doorFilter', F); selDoors = new Set(); return renderDoors(); }
   if (e.target.id === 'ndSite' || e.target.id === 'ndKunde') e.target.dispatchEvent(new Event('input', { bubbles: true }));
   if (e.target.dataset?.sortSel !== undefined) { settings.set('visitSort', { k: e.target.value, d: 1 }); return renderVisit(); }
   const f = e.target.dataset?.photoFor;

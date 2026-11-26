@@ -456,3 +456,10 @@ a.big-btn.as-a { display: flex; margin-bottom: 12px; }
 .inote-chips { align-items: center; gap: 6px; margin: 0; }
 .chip.inote-add { font-size: .85em; }
 .fld.inote textarea { width: 100%; }
+/* Etagen */
+.fl-edit { margin: 10px 0; }
+.fl-edit > .lbl { display: block; font-weight: 600; margin-bottom: 6px; }
+.fl-row { display: flex; gap: 6px; align-items: center; margin-bottom: 6px; }
+.fl-row .field { flex: 1; }
+.door-et select.field { display: inline-block; width: auto; min-height: 36px; padding: 4px 8px; }
+.fl-h { margin-top: 14px; }
