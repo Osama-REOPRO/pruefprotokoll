@@ -264,6 +264,7 @@ async function routeInner() {
   const h = location.hash.replace(/^#\/?/, '');
   const parts = h.split('/');
   if (parts[0] !== 'plan') planClose();
+  if (parts[0] !== 'p') viewMode = false;
   if (parts[0] === 'plan' && parts[1]) {
     if (insp) await saveNow();
     insp = null; tpl = null; visit = null; curDoor = null; doorScope = null;
@@ -335,6 +336,15 @@ async function routeInner() {
         if (v?.agName) insp.sig.ag.name = v.agName;
       }
     }
+    // Fertige Protokolle öffnen in der Ansicht; ✎ Bearbeiten führt in die gewohnte Eingabe
+    if (parts[2] === 'v' || (parts[2] == null && insp.status === 'done' && !insp.paper)) {
+      if (parts[2] == null) { const hv = `#/p/${insp.id}/v`; history.replaceState(null, '', hv); lastHash = hv; }
+      if (!/^#\/p\//.test(prevHash)) viewBack = prevHash || '';
+      if (!viewBack) viewBack = insp.paper ? (insp.returnTo || `#/d/${insp.gateId}`) : insp.visitId ? `#/t/${insp.visitId}` : '#/';
+      viewMode = true; releaseAwake();
+      return renderView();
+    }
+    viewMode = false; deskShown = null;
     step = Math.max(0, Math.min(stepCount() - 1, parseInt(parts[2] ?? insp.lastStep ?? 0, 10) || 0));
     if (step > (insp.maxStep ?? 0)) insp.maxStep = step;
     settings.set('last', { id: insp.id, step, at: Date.now() });
@@ -617,6 +627,58 @@ function refreshChrome() {
   else if (step > 0 && step < stepCount() - 1) tools(step, document);
 }
 
+// ---------- Ansicht: fertiges Protokoll nur lesen (dicht, ohne Knöpfe) ----------
+let viewMode = false, viewBack = '';
+const VSTATE = { ok: ['v-ok', '✓', 'o.B.'], b: ['v-b', '✗', 'B.'], nv: ['v-nv', '–', 'n.v.'] };
+function renderView() {
+  const u = unitOf(insp), st = stats(), h = insp.header || {};
+  const kv = (label, val) => val ? `<div class="vw-kv"><span>${esc(label)}</span><b>${esc(val)}</b></div>` : '';
+  const groups = tpl.header.map(g => {
+    const vals = h[g.id] || {};
+    const rows = g.fields.filter(f => !f.showIf || vals[f.showIf[0]] === f.showIf[1]).map(f => kv(f.label, vals[f.key])).join('')
+      + (g.id === tpl.unit.group && ctxSite && ctxEtage ? kv('Etage', floorsOf(ctxSite).find(f => f.id === ctxEtage)?.name) : '');
+    return rows ? `<div class="vw-grp"><h3>${esc(g.title)}</h3>${rows}</div>` : '';
+  }).join('');
+  const val = (it, a) => {
+    if (a.x == null || a.x === '' || (Array.isArray(a.x) && !a.x.length)) return '';
+    return `<span class="vw-x">${esc(Array.isArray(a.x) ? a.x.join(', ') : a.x)}</span>`;
+  };
+  const off = tpl.sections.filter(x => secOff(x));
+  const secs = tpl.sections.filter(x => !secOff(x)).map(sec => {
+    const rows = sec.items.map(it => {
+      if (it.heading) return `<div class="vw-sub">${esc(it.heading)}</div>`;
+      const a = insp.answers[it.id] || {};
+      if (it.noStatus) return `<div class="vw-row info"><span class="vw-s"></span><span class="vw-l">${esc(it.label)}</span>${val(it, a) || '<span class="vw-x muted">–</span>'}</div>`;
+      const [cls, ic, lb] = VSTATE[a.s] || ['v-0', '', 'leer'];
+      return `<div class="vw-row ${a.s === 'b' ? 'bad' : ''}"><span class="vw-s ${cls}" title="${lb}">${ic || '·'}</span><span class="vw-l">${esc(it.label)}${val(it, a)}${a.note ? `<span class="vw-note">${esc(a.note)}</span>` : ''}</span>${a.photos?.length ? `<span class="vw-ph">${a.photos.map(pid => `<img alt="" data-pid="${pid}" data-vzoom src="${photoUrls.get(pid) || ''}">`).join('')}</span>` : ''}</div>`;
+    }).join('');
+    const nb = sec.items.filter(isCheck).filter(it => insp.answers[it.id]?.s === 'b').length;
+    return `<section class="vw-sec"><h3>${esc(sec.title)}${nb ? ` <span class="pill red">${nb} B.</span>` : ''}</h3>${rows}</section>`;
+  }).join('');
+  const sig = (who, lbl) => { const s = insp.sig?.[who] || {}; return `<div class="vw-sig"><span class="muted small">${lbl}</span>${s.img ? `<img alt="" src="${s.img}">` : who === 'ag' && s.absent ? '<i class="muted">niemand vor Ort</i>' : '<i class="muted">keine Unterschrift</i>'}${s.name ? `<b>${esc(s.name)}</b>` : ''}</div>`; };
+  const edit = DESK ? `<button class="tb-btn primary" data-act="viewEdit">✎ Bearbeiten</button>` : '';
+  const P = (h2, body, cls = '') => `<section class="${DESK ? 'dk-panel' : 'card'} vw-card ${cls}">${h2 ? `<h2>${h2}</h2>` : ''}${body}</section>`;
+  $app.innerHTML = `
+    ${regBar(viewBack, unitHead(u), `${esc(u.noun)} · ${esc(inspTitle(insp))}`, `${edit}<button class="${DESK ? 'tb-btn icon' : 'icon-btn'}" data-act="menu" data-for="insp" data-id="${insp.id}" aria-label="Mehr">⋯</button>`)}
+    <main class="${DESK ? 'dk-page' : 'home'} vw-page">
+      ${insp.intNote ? `<section class="${DESK ? 'dk-panel' : 'card'} inote-card vw-inote"><span class="lbl">📝 Interne Notiz</span><p>${esc(insp.intNote)}</p></section>` : ''}
+      <section class="vw-head">
+        <div class="vw-tiles">
+          <span class="vw-t v-ok"><b>${st.ok}</b> o.B.</span><span class="vw-t v-b"><b>${st.b}</b> B.</span>
+          ${tpl.states?.includes('nv') ? `<span class="vw-t v-nv"><b>${st.nv}</b> n.v.</span>` : ''}${st.open ? `<span class="vw-t"><b>${st.open}</b> leer</span>` : ''}
+        </div>
+        <div class="vw-meta">${insp.status === 'done' ? '<span class="pill green">abgeschlossen</span>' : '<span class="pill">in Arbeit</span>'}${insp.paper ? ' <span class="pill paper">Papier</span>' : ''}${insp.angebot ? ' <span class="pill red">Bitte um Angebot</span>' : ''}
+          <span>${esc([insp.ort, insp.datum].filter(Boolean).join(', '))}</span>${insp.sig?.an?.name ? `<span class="muted">Prüfer: ${esc(insp.sig.an.name)}</span>` : ''}</div>
+      </section>
+      ${insp.remarks ? P('Bemerkungen / Festgestellte Mängel', `<p class="vw-rem">${esc(insp.remarks).replace(/\n/g, '<br>')}</p>`) : ''}
+      ${insp.doorChanges?.length ? `<div class="chg-box"><b>ⓘ ${tpl.kind === 'tuer' ? 'An der Tür' : 'Am Tor'} geändert:</b> ${insp.doorChanges.map(c => `${esc(c.field)} <s>${esc(c.from)}</s> → <b>${esc(c.to)}</b>`).join(', ')}</div>` : ''}
+      ${P('Daten', `<div class="vw-grps">${groups || '<p class="muted">Keine Angaben</p>'}</div>`)}
+      ${P('Prüfung', `<div class="vw-secs">${secs}</div>${off.length ? `<p class="muted small vw-off">Nicht vorhanden: ${off.map(x => esc(x.title)).join(' · ')}</p>` : ''}`)}
+      ${insp.paper ? '' : P('Unterschriften', `<div class="vw-sigs">${sig('ag', 'Auftraggeber')}${sig('an', 'Auftragnehmer (Prüfer)')}</div>`)}
+    </main>
+    ${DESK ? '' : '<nav class="bottom vw-bottom"><button class="nav-btn next ready" data-act="viewEdit">✎ Bearbeiten</button></nav>'}`;
+  hydrateThumbs();
+}
 function renderStep() {
   if (DESK && !COLLECT) {
     if (deskShown === insp.id && document.querySelector('main.dk-all')) return scrollToSec(step);
@@ -1221,7 +1283,8 @@ async function newVisit() {
 }
 function openItem(i) {
   const last = TEMPLATES[i.templateId].sections.length + 1;
-  const st = i.status === 'done' ? last : (i.lastStep > 0 ? i.lastStep : 1);
+  if (i.status === 'done' && !i.paper) return (location.hash = `#/p/${i.id}/v`);
+  const st = i.lastStep > 0 ? i.lastStep : 1;
   location.hash = `#/p/${i.id}/${st}`;
 }
 
@@ -1416,6 +1479,7 @@ async function openMenu(forWhat, id) {
       ...(gate ? [go(`#/d/${gate.id}`, `🚪 Zur ${u.noun} (alle Protokolle)`)] : []),
       del('inspection', i.id, 'Papierprotokoll löschen'),
     ] : [
+      ...(i.status === 'done' && !(viewMode && insp?.id === i.id) ? [go(`#/p/${i.id}/v`, '👁 Ansicht (nur lesen)')] : []),
       ...(forWhat === 'item' ? [go(`#/p/${i.id}/0`, '✎ Daten bearbeiten')] : [go(`#/p/${i.id}/0`, '✎ Stammdaten')]),
       ...(gate ? [go(`#/d/${gate.id}`, `🚪 Zur ${u.noun} (Daten und alle Protokolle)`)] : []),
       ...(i.status !== 'done' ? [btn('paperFor', i.id, '📄 Altes Papierprotokoll nachtragen')] : []),
@@ -2657,7 +2721,7 @@ async function renderPlan(sid, fid) {
     ${ph ? `<div class="pv-stage" id="pvStage"><div class="pv-world"><img id="pvImg" src="${planUrl}" width="${f.map.w}" height="${f.map.h}" alt="Plan ${esc(f.name)}" draggable="false"></div><div class="pv-pins" id="pvPins"></div></div>
       ${ctrls}
       <p class="pv-ui pv-placehint hidden" id="pvPlaceHint"></p>
-      <p class="pv-ui pv-hint" id="pvHint">${fine ? 'Klicken: Tür oder Tor setzen · Ziehen: verschieben · Mausrad: zoomen · Umschalt + Rad oder rechte Maustaste: drehen' : 'Ein Finger: verschieben<br>Zwei Finger: zoomen und drehen<br>📍 tippen, um Türen zu setzen'}</p>`
+      <p class="pv-ui pv-hint" id="pvHint">${fine ? 'Doppelklick: Tür oder Tor setzen · Ziehen: verschieben · Mausrad: zoomen · Umschalt + Rad oder rechte Maustaste: drehen' : 'Ein Finger: verschieben<br>Zwei Finger: zoomen und drehen<br>📍 tippen, um Türen zu setzen'}</p>`
     : `<div class="pv-empty"><p>Für <b>${esc(f.name)}</b> gibt es noch keinen Plan.</p><p class="muted small">Ein Foto oder Bild des Grundrisses wählen. Es bleibt nur auf diesem Gerät gespeichert und wird mit Terminen mitgeschickt.</p>
       <div class="pv-src">${FINE.matches ? planUpBtn(sid, f.id, '🖼 Bild für den Plan wählen', 'big-btn primary') : planSources(sid, f.id)}</div></div>`}
   </div>`;
@@ -2668,6 +2732,7 @@ async function renderPlan(sid, fid) {
     w: f.map.w, h: f.map.h, rot: +settings.get('planRot:' + f.id, 0) || 0,
     onRot: (r) => settings.set('planRot:' + f.id, Math.round(r * 10) / 10),
     onTap: (x, y, t) => planTap(x, y, t),
+    onDbl: (x, y) => planTap(x, y, 'mouse', true),
     tapMode: () => !!(PS && (PS.place || PS.armed || PS.find)),
     onChange: (v, fitS) => {
       layoutPins();
@@ -2745,10 +2810,14 @@ async function savePos(g, pos) {
   await saveGate(g);
 }
 // Tippen / Klicken auf eine leere Stelle des Plans
-function planTap(sx, sy, ptype) {
+// Maus: einfacher Klick schließt nur (Suche, Karte); gesetzt wird per Doppelklick (dbl).
+// Finger: im Platzier-Modus (📍) setzt jeder Tipp.
+function planTap(sx, sy, ptype, dbl = false) {
   if (!PS) return;
-  if (PS.find) return closeFind();
-  if (PS.sel) { PS.sel = null; closeCard(); drawPins(); if (!PS.armed) return; }
+  if (PS.find && !dbl) return closeFind();
+  if (PS.find) closeFind();
+  if (PS.sel) { PS.sel = null; closeCard(); drawPins(); if (!PS.armed && !dbl) return; }
+  if (ptype === 'mouse' && !dbl && !PS.armed) return;
   const touchPlace = ptype !== 'mouse' && !PS.place && !PS.armed;
   if (touchPlace) return;
   const [x, y] = planCtl.toImage(sx, sy);
@@ -2937,7 +3006,7 @@ function planMenu(sid, fid, confirm = false) {
   sheet.classList.add('show');
 }
 function planKeys() {
-  const K = [['Ziehen', 'Plan verschieben'], ['Mausrad', 'zoomen (an der Mausposition)'], ['Umschalt + Rad', 'drehen'], ['Rechte Maustaste ziehen', 'drehen'], ['Doppelklick', 'näher (mit Umschalt: weiter weg)'],
+  const K = [['Ziehen', 'Plan verschieben'], ['Mausrad', 'zoomen (an der Mausposition)'], ['Umschalt + Rad', 'drehen'], ['Rechte Maustaste ziehen', 'drehen'], ['Doppelklick', 'Tür oder Tor hier setzen'], ['Umschalt + Doppelklick', 'weiter weg'],
     ['+ / −', 'zoomen'], ['Q / E', 'um 15° drehen (mit Umschalt: 1°)'], ['R', 'gerade (0°)'], ['0 / F', 'ganzen Plan zeigen'], ['← ↑ → ↓', 'verschieben'], ['Bild ↑ / Bild ↓', 'Etage höher / tiefer'], ['Esc', 'zurück zum Objekt']];
   const sheet = document.getElementById('sheet');
   sheet.innerHTML = `<div class="sheet-inner keys"><div class="sheet-grab"></div><h2 class="sheet-h">Plan: Maus und Tasten</h2>
@@ -3047,6 +3116,8 @@ document.addEventListener('click', async (e) => {
   const gp = e.target.closest('[data-gpop]');
   if (gp) { e.preventDefault(); return openGuidePop(gp.dataset.gpop); }
   if (e.target.closest('.gpop-more')) closeJump();
+  const vimg = e.target.closest('img[data-vzoom]');
+  if (vimg) return openZoom(vimg);
   const zimg = e.target.closest('.gdoc img[data-zoom]');
   if (zimg) return openZoom(zimg);
   if (e.target.closest('.col-rs')) return; // Ziehgriff am Spaltenrand sortiert nicht
@@ -3061,6 +3132,8 @@ document.addEventListener('click', async (e) => {
     case 'fromGate': return fromGate(b.dataset.id);
     case 'theme': { const t = settings.get('theme', 'hell'); settings.set('theme', THEMES[(THEMES.indexOf(t) + 1) % THEMES.length]); applyLook(); return route(); }
     case 'size': { settings.set('size', settings.get('size', 'normal') === 'normal' ? 'gross' : 'normal'); return applyLook(); }
+    case 'viewEdit': return (location.hash = `#/p/${insp.id}/0`);
+    case 'viewShow': await saveNow(); return (location.hash = `#/p/${insp.id}/v`);
     case 'home': await saveNow(); return (location.hash = insp?.paper ? (insp.returnTo || `#/d/${insp.gateId}`) : insp?.visitId ? `#/t/${insp.visitId}` : '#/');
     case 'jump': return openJump();
     case 'goto': closeJump(); return go(+b.dataset.step);
@@ -3399,6 +3472,7 @@ document.addEventListener('keydown', (e) => {
     return gl ? openGuidePop(gl.dataset.href) : (location.hash = '#/handbuch');
   }
   if (!insp || !tpl) return;
+  if (viewMode) { if (k === 'e' || k === 'Enter') { e.preventDefault(); location.hash = `#/p/${insp.id}/0`; } else if (k === 'p') { e.preventDefault(); location.hash = `#/druck/${insp.id}`; } return; }
   const all = DESK && document.querySelector('main.dk-all');
   const inSection = all || (step > 0 && step < stepCount() - 1);
   const click = (sel) => { const el = document.querySelector(sel); if (el && !el.disabled) { el.click(); return true; } return false; };
@@ -3480,6 +3554,7 @@ async function renderNav() {
   const h = location.hash;
   if (insp && tpl && /^#\/p\//.test(h)) {
     const u = unitOf(insp);
+    if (viewMode) { nav.innerHTML = `<button class="dn-back" data-act="menuGo" data-href="${esc(viewBack)}">‹ Zurück</button><div class="dn-title"><span class="dn-h">${unitHead(u)}</span><span>${esc(u.noun)} · ${esc(inspTitle(insp))}</span></div><button class="tb-btn primary dn-edit" data-act="viewEdit">✎ Bearbeiten <kbd>E</kbd></button><div class="dn-foot"><a class="tb-btn sm" href="#/handbuch">📖 Handbuch</a><button class="tb-btn sm" data-act="lang">${LANG === 'en' ? 'DE' : 'EN'}</button></div>`; return; }
     nav.innerHTML = `
       <button class="dn-back" data-act="home">‹ ${insp.paper ? 'Zurück' : insp.visitId ? 'Zum Termin' : 'Übersicht'}</button>
       <div class="dn-title"><span class="dn-h">${unitHead(u)}</span><span>${esc(u.noun)} · ${esc(inspTitle(insp))}</span></div>

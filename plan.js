@@ -8,7 +8,7 @@
 const DEG = Math.PI / 180;
 const rot = (vx, vy, a) => [vx * Math.cos(a) - vy * Math.sin(a), vx * Math.sin(a) + vy * Math.cos(a)];
 
-export function mountPlan(stage, img, { w, h, rot: r0 = 0, onRot, onChange, onTap, tapMode } = {}) {
+export function mountPlan(stage, img, { w, h, rot: r0 = 0, onRot, onChange, onTap, onDbl, tapMode } = {}) {
   const world = stage.querySelector('.pv-world');
   let v = { x: 0, y: 0, s: 1, r: r0 }, fitS = 1, raf = 0;
   const box = () => stage.getBoundingClientRect();
@@ -100,7 +100,7 @@ export function mountPlan(stage, img, { w, h, rot: r0 = 0, onRot, onChange, onTa
     const isTap = pts.size === 1 && tap0 && Date.now() - tap0.t < 450 && Math.hypot(ux - tap0.p[0], uy - tap0.p[1]) < (e.pointerType === 'mouse' ? 5 : 12);
     up(e);
     if (!isTap) return;
-    if (e.pointerType === 'mouse') { clearTimeout(tapTimer); tapTimer = setTimeout(() => onTap?.(ux, uy, e.pointerType), 230); return; }
+    if (e.pointerType === 'mouse') { clearTimeout(tapTimer); if (onDbl) return onTap?.(ux, uy, e.pointerType); tapTimer = setTimeout(() => onTap?.(ux, uy, e.pointerType), 230); return; }
     // Finger: im Platzier-Modus zählt jeder Tipp, sonst zoomt Doppeltippen
     if (tapMode?.()) return onTap?.(ux, uy, e.pointerType);
     const now = Date.now();
@@ -108,7 +108,8 @@ export function mountPlan(stage, img, { w, h, rot: r0 = 0, onRot, onChange, onTa
   });
   stage.addEventListener('pointercancel', up);
   stage.addEventListener('contextmenu', (e) => e.preventDefault());
-  stage.addEventListener('dblclick', (e) => { clearTimeout(tapTimer); if (e.target.closest('.pv-ui, .pv-pin')) return; const [px, py] = local(e); zoomAt(e.shiftKey ? 0.5 : 2, px, py); });
+  stage.addEventListener('dblclick', (e) => { clearTimeout(tapTimer); if (e.target.closest('.pv-ui, .pv-pin')) return; const [px, py] = local(e); if (onDbl && !e.shiftKey) return onDbl(px, py); zoomAt(e.shiftKey ? 0.5 : 2, px, py); });
+  // Doppelklick: mit onDbl (Etagenplan: Tür setzen) dorthin, sonst näher; Umschalt + Doppelklick: weiter weg
   // Mausrad / Touchpad: zoomen; mit Umschalt drehen
   stage.addEventListener('wheel', (e) => {
     if (e.target.closest('.pv-ui')) return;
