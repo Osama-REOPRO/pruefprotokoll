@@ -1954,7 +1954,7 @@ function doorList(R, F, q) {
   const anyF = ['kunde', 'kind', 'herst', 'etage', ...(scoped ? [] : ['site'])].some(k => F[k]);
   const filters = `<div class="flt-bar">
     ${scoped ? '' : sel('site', 'Objekt', sitesUsed.map(x => [x.id, sname(x)]))}
-    ${F.site ? sel('etage', 'Etage', [...floors.map(f => [f.id, f.name]), ['none', 'ohne Etage']]) : ''}
+    ${F.site ? sel('etage', 'Etage', [...floors.slice().reverse().map(f => [f.id, f.name]), ['none', 'ohne Etage']]) : ''}
     ${sel('kunde', 'Kunde', kunden.map(c => [c.id, c.name]))}
     ${sel('kind', 'Art', [['tuer', 'Türen'], ['tor', 'Tore']])}
     ${hersts.length ? sel('herst', 'Hersteller', hersts.map(h => [h, h])) : ''}
@@ -2491,7 +2491,7 @@ function addFloor(site, name) {
   return f;
 }
 function etageSelect(site, cur, gid) {
-  return `<select class="field" data-etage="${gid}"><option value="">– keine Etage –</option>${floorsOf(site).map(f => `<option value="${f.id}" ${f.id === cur ? 'selected' : ''}>${esc(f.name)}</option>`).join('')}<option value="__new">＋ Neue Etage …</option></select>`;
+  return `<select class="field" data-etage="${gid}"><option value="">– keine Etage –</option>${floorsOf(site).reverse().map(f => `<option value="${f.id}" ${f.id === cur ? 'selected' : ''}>${esc(f.name)}</option>`).join('')}<option value="__new">＋ Neue Etage …</option></select>`;
 }
 async function setDoorEtage(gid, eid) {
   const g = await db.get('gates', gid); if (!g) return;
@@ -2527,11 +2527,12 @@ async function etSave(siteId, gid, name) {
 }
 // Etagen eines Objekts verwalten (im Objekt-Fenster)
 function floorsEditor(st) {
-  const fl = floorsOf(st);
-  return `<div class="fl-edit"><span class="lbl">Etagen <span class="muted small">(Reihenfolge von unten nach oben)</span></span>
-    ${fl.map((f, i) => `<div class="fl-row"><input class="field sm" data-flname="${st.id}:${f.id}" value="${esc(f.name)}" autocomplete="off">
-      <button class="mini-x" data-act="flMove" data-site="${st.id}" data-id="${f.id}" data-d="-1" ${i === 0 ? 'disabled' : ''} aria-label="Nach unten">↓</button>
-      <button class="mini-x" data-act="flMove" data-site="${st.id}" data-id="${f.id}" data-d="1" ${i === fl.length - 1 ? 'disabled' : ''} aria-label="Nach oben">↑</button>
+  // Angezeigt wie im Haus: oberste Etage oben. ↑ macht eine Etage höher, ↓ tiefer.
+  const fl = floorsOf(st), top = fl.slice().reverse();
+  return `<div class="fl-edit"><span class="lbl">Etagen <span class="muted small">(oben die oberste)</span></span>
+    ${top.map((f, i) => `<div class="fl-row"><input class="field sm" data-flname="${st.id}:${f.id}" value="${esc(f.name)}" autocomplete="off">
+      <button class="mini-x" data-act="flMove" data-site="${st.id}" data-id="${f.id}" data-d="1" ${i === 0 ? 'disabled' : ''} aria-label="Nach oben" title="Eine Etage höher">↑</button>
+      <button class="mini-x" data-act="flMove" data-site="${st.id}" data-id="${f.id}" data-d="-1" ${i === top.length - 1 ? 'disabled' : ''} aria-label="Nach unten" title="Eine Etage tiefer">↓</button>
       ${f.map ? `<button class="mini-x plan-b on" data-act="planGo" data-site="${st.id}" data-id="${f.id}" title="Plan öffnen" aria-label="Plan öffnen">🗺</button>` : planUpBtn(st.id, f.id, '＋ Plan', 'mini-x plan-b')}
       <button class="mini-x" data-act="flDel" data-site="${st.id}" data-id="${f.id}" aria-label="Löschen">×</button></div>`).join('') || '<p class="muted small">Noch keine Etagen.</p>'}
     <div class="chips">${FLOOR_QUICK.filter(n => !fl.some(f => normTxt(f.name).replace(/[\s.]/g, '') === normTxt(n).replace(/[\s.]/g, ''))).map(n => `<button class="chip" data-act="flAdd" data-site="${st.id}" data-v="${esc(n)}">＋ ${esc(n)}</button>`).join('')}
@@ -2563,7 +2564,7 @@ async function renderPlan(sid, fid) {
   if (ph?.blob) planUrl = URL.createObjectURL(ph.blob);
   planCur = { sid, fid: f.id };
   const fine = FINE.matches;
-  const tabs = fl.map(x => `<button class="pv-tab ${x.id === f.id ? 'on' : ''} ${x.map ? '' : 'nomap'}" data-act="planGo" data-site="${sid}" data-id="${x.id}">${esc(x.name)}</button>`).join('');
+  const tabs = fl.slice().reverse().map(x => `<button class="pv-tab ${x.id === f.id ? 'on' : ''} ${x.map ? '' : 'nomap'}" data-act="planGo" data-site="${sid}" data-id="${x.id}">${esc(x.name)}</button>`).join('');
   const ctrls = fine ? `<div class="pv-ui pv-tools">
       <button class="pv-b" data-act="pvZoom" data-d="-1" title="Verkleinern ( − )">−</button><span class="pv-val" id="pvZ">100 %</span><button class="pv-b" data-act="pvZoom" data-d="1" title="Vergrößern ( + )">＋</button>
       <span class="pv-sep"></span>
