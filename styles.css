@@ -541,3 +541,5 @@ button.guide-link { border: 0; background: none; cursor: pointer; font: inherit;
 .inote-x { position: absolute; top: 6px; right: 6px; width: 36px; height: 36px; border-radius: 50%; border: 0; background: none; color: var(--muted); font-size: 1em; cursor: pointer; }
 .inote-x:hover { background: var(--na-bg); color: var(--ink); }
 .inote-l .lbl { padding-right: 36px; }
+.nr-next { align-items: center; }
+.nr-next .nw { white-space: nowrap; }

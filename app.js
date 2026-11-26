@@ -650,6 +650,7 @@ function renderHeader() {
           </span>
           ${g.scope === 'gate' && !f.perInspection ? chgNote(g.id, f.key) : ''}
           ${todoBox(`h:${g.id}.${f.key}`)}
+          ${g.id === tpl.unit.group && f.key === tpl.unit.nr && insp.nrNext && !vals[f.key] ? `<span class="chips nr-next"><button type="button" class="chip on" data-act="nrNext" data-h="${g.id}.${f.key}" data-v="${esc(insp.nrNext)}">＋ ${esc(insp.nrNext)}</button><span class="muted small nw">nach ${esc(insp.nrFrom || '')}</span></span>` : ''}
           ${f.suggest && !DESK ? `<span class="chips">${f.suggest.map(s => `<button type="button" class="chip" data-act="fill" data-h="${g.id}.${f.key}" data-v="${esc(s)}">${esc(s)}</button>`).join('')}</span>` : ''}
         </label>`).join('')}
       ${g.id === tpl.unit.group && insp.gateId && insp.siteId ? `<label class="fld half"><span class="lbl">Etage</span>${etageSelect(ctxSite, ctxEtage, insp.gateId)}</label>` : ''}
@@ -1224,6 +1225,19 @@ function openItem(i) {
 
 // Tür/Tor duplizieren: gleiche Häkchen und Angaben, aber Standort und Nummer leer,
 // damit die Kopie nicht versehentlich als dasselbe Element durchgeht. Notizen und Fotos gehören zum Original.
+// Tür-Nr. weiterzählen: letzte Zahl um 1 erhöhen, führende Nullen bleiben (OG1-02 → OG1-03).
+// Ist die Nummer am Objekt schon vergeben, die nächste freie nehmen.
+function nextNr(nr, used) {
+  const m = String(nr || '').match(/^(.*?)(\d+)(\D*)$/);
+  if (!m) return '';
+  let n = +m[2];
+  for (let i = 0; i < 500; i++) {
+    n++;
+    const cand = m[1] + String(n).padStart(m[2].length, '0') + m[3];
+    if (!used.has(normNr(cand))) return cand;
+  }
+  return '';
+}
 async function duplicateItem(id) {
   const src = await db.get('inspections', id);
   if (!src) return;
@@ -1243,11 +1257,19 @@ async function duplicateItem(id) {
     templateId: src.templateId, header, customerId: src.customerId, siteId: src.siteId, gateId: null, etageId: srcGate?.etageId || null,
     visitId: src.visitId, pairId: src.pairId, order: (src.order ?? 0) + 0.5, agName: src.sig?.ag?.name || '', secOn: src.secOn || null,
   }, { open: false });
+  // Vorschlag für die Tür-Nr. (wird nicht eingetragen, nur als Knopf angeboten)
+  const srcNr = src.header?.[u.group]?.[u.nr];
+  if (u.nr && srcNr) {
+    const kind = t.kind, [gates, its] = await Promise.all([db.all('gates'), db.all('inspections')]);
+    const used = new Set([...gates.filter(g => g.siteId === src.siteId && gateKind(g) === kind).map(g => normNr(gateUnit(g).nr)),
+      ...its.filter(i => i.siteId === src.siteId && TEMPLATES[i.templateId]?.kind === kind).map(i => normNr(unitOf(i).nr))].filter(Boolean));
+    rec.nrNext = nextNr(srcNr, used); rec.nrFrom = srcNr;
+  }
   Object.assign(rec, { answers, angebot: !!src.angebot, ort: src.ort || '', copiedFrom: src.id, maxStep: t.sections.length, checked: Object.fromEntries(Object.entries(src.checked || {}).filter(([k]) => k !== 'head')) });
   await db.put('inspections', rec);
   buzz();
   location.hash = `#/p/${rec.id}/0`;
-  setTimeout(() => snack(`Kopie angelegt. Bitte Standort${u.nr ? ' und ' + u.nrLabel : ''} eintragen.`), 250);
+  setTimeout(() => snack(rec.nrNext ? `Kopie angelegt. Bitte Standort eintragen. ${u.nrLabel}: Vorschlag ${rec.nrNext} antippen.` : `Kopie angelegt. Bitte Standort${u.nr ? ' und ' + u.nrLabel : ''} eintragen.`), 250);
 }
 
 // ---------- Löschen ----------
@@ -2814,6 +2836,11 @@ document.addEventListener('click', async (e) => {
       saveNow(); return rerenderRow(b.dataset.id);
     }
     case 'undo': { const f = undoState; undoState = null; clearTimeout(undoTimer); return f?.(); }
+    case 'nrNext': {
+      const inp = document.querySelector(`input[data-h="${b.dataset.h}"]`); if (!inp) return;
+      inp.value = b.dataset.v; inp.dispatchEvent(new Event('input', { bubbles: true })); inp.dispatchEvent(new Event('change', { bubbles: true }));
+      b.closest('.nr-next')?.remove(); buzz(); return;
+    }
     case 'fill': {
       const [g, k] = b.dataset.h.split('.');
       (insp.header[g] ||= {})[k] = b.dataset.v;
