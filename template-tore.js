@@ -10,7 +10,7 @@ export const TEMPLATE_TORE = {
   version: 1,
   kind: 'tor',
   states: ['ok', 'b'],
-  unit: { group: 'tor', noun: 'Tor', standort: 'standort', typ: 'typ', nr: 'fabrNr', nrLabel: 'Nr.' },
+  unit: { group: 'tor', noun: 'Tor', standort: 'standort', typ: 'typ', nr: 'torNr', nrLabel: 'Tor-Nr.' },
   title: 'Prüfprotokoll kraftbetätigte Tore',
   subtitle: 'ASR A1.7 und DIN 14677',
 
@@ -35,6 +35,8 @@ export const TEMPLATE_TORE = {
     {
       id: 'tor', title: 'Tor', scope: 'gate', fields: [
         // Reihenfolge wie auf dem Papier (Bezeichnung): Typ · Fabr.-Nr. + Bj. · Hersteller · Panzer Abmess. + Gew.
+        // Tor-Nr. steht nicht auf dem Papierformular: im Druck in der Zelle rechts neben Standort/Lage
+        { key: 'torNr', label: 'Tor-Nr.', half: true },
         { key: 'standort', label: 'Standort / Lage', required: true, hint: 'z. B. Hofeinfahrt, EG Flur zum Büro' },
         { key: 'typ', label: 'Typ', suggest: ['Sektionaltor', 'Rolltor', 'Schiebetor', 'Stahlschiebetor', 'Drehflügeltor', 'Falttor', 'Schnelllauftor', 'T30', 'T90'] },
         { key: 'fabrNr', label: 'Fabr.-Nr.', half: true },

@@ -77,7 +77,7 @@ const EN = {
   'Sektionaltor': 'Sectional door', 'Rolltor': 'Roller door', 'Schiebetor': 'Sliding gate', 'Stahlschiebetor': 'Steel sliding gate', 'Drehflügeltor': 'Swing gate',
   'Falttor': 'Folding door', 'Schnelllauftor': 'High-speed door',
   'z. B. Hofeinfahrt, EG Flur zum Büro': 'e.g. yard entrance, ground floor corridor to office', 'z. B. 1. OG Treppenhaus Nord': 'e.g. 1st floor north stairwell',
-  'z. B. T30-2 WT': 'e.g. T30-2 WT', 'Tür-Nr.': 'Door no.', 'Anzahl der Flügel': 'Number of leaves', 'Art der Prüfung': 'Type of inspection',
+  'z. B. T30-2 WT': 'e.g. T30-2 WT', 'Tür-Nr.': 'Door no.', 'Tor-Nr.': 'Gate no.', 'Anzahl der Flügel': 'Number of leaves', 'Art der Prüfung': 'Type of inspection',
   'Inbetriebnahme': 'Commissioning', 'Abnahme': 'Acceptance', 'Wartung': 'Maintenance', 'Bauart': 'Construction', 'Rohrrahmen-Türen': 'Tubular frame doors',
   'Stahlblechtüren': 'Sheet steel doors', 'Holztür': 'Wooden door', 'Funktion': 'Function', 'Brandschutztür': 'Fire door', 'Rauchschutztür': 'Smoke door',
   'Kombiniert RS/BS': 'Combined smoke/fire', 'Klasse': 'Class', 'sonstige': 'other', 'sonstige Klasse': 'other class', 'Grunddaten Tür': 'Door basic data',
@@ -240,7 +240,7 @@ export function tr(text) {
   for (const [de, en] of SUBS) out = out.split(de).join(en);
   return out;
 }
-const SUBS = [['Tür-Nr.', 'Door no.'], ['zuletzt ', 'last '], ['Tür · ', 'Door · '], ['Tor · ', 'Gate · ']];
+const SUBS = [['Tür-Nr.', 'Door no.'], ['Tor-Nr.', 'Gate no.'], ['zuletzt ', 'last '], ['Tür · ', 'Door · '], ['Tor · ', 'Gate · ']];
 
 const ATTRS = ['placeholder', 'aria-label', 'title'];
 function translateNode(root) {
