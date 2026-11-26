@@ -450,3 +450,9 @@ a.big-btn.as-a { display: flex; margin-bottom: 12px; }
 .dn-title .dn-h { display: block; }
 /* Abschnittskopf: auf dem Handy wie bisher untereinander */
 .sec-line { display: contents; }
+/* Interne Notizen */
+.inote-card { border-left: 5px solid #7c3aed; }
+.inote-card .fld.inote { margin-bottom: 8px; }
+.inote-chips { align-items: center; gap: 6px; margin: 0; }
+.chip.inote-add { font-size: .85em; }
+.fld.inote textarea { width: 100%; }

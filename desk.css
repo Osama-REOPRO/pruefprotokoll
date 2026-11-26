@@ -312,3 +312,7 @@ html.desk .sec-line .sec-title { margin: 0; font-size: 1.3em; }
 html.desk .sec-line .sec-tools, html.desk .sec-line .sec-sw { margin: 0; }
 html.desk .dk-sec { padding-bottom: 14px; margin-bottom: 14px; }
 html.desk .dn-title .dn-h, html.desk .dn-title .dn-h b { text-transform: none; letter-spacing: 0; }
+html.desk .inote-body { padding: 8px 14px; }
+html.desk .inote-card { margin-bottom: 12px; }
+html.desk .inote-card .fld.inote { display: block; }
+html.desk .inote-card .fld.inote .lbl { display: block; margin-bottom: 2px; }
