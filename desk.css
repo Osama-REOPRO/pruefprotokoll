@@ -279,3 +279,18 @@ html.desk .search-x { width: 22px; height: 22px; font-size: .95em; }
 html.desk .dup-box { border-width: 1px; border-radius: 8px; padding: 8px 12px; grid-column: 1 / -1; }
 html.desk .dup-b { min-height: 28px; padding: 0 12px; border-radius: 6px; border-width: 1px; font-size: .95em; }
 html.desk .dup-inline { display: none; }
+
+/* Türen und Tore */
+html.desk .flt-bar { margin: 0 0 10px; }
+html.desk .flt { flex: 0 1 220px; }
+html.desk .flt select.field { min-height: 30px; padding: 3px 6px; }
+html.desk .dt td.cb, html.desk .dt th.cb { width: 1%; padding-right: 0; }
+html.desk .dt td.cb input { width: 16px; height: 16px; }
+html.desk .reg-page .dk-panel { margin-bottom: 12px; }
+html.desk .reg-page .dk-panel .grid { padding: 10px 14px; }
+html.desk .door-who { padding: 8px 14px; }
+html.desk .sel-bar { left: var(--nav-w); padding: 8px 16px; }
+html.desk .sel-b { padding: 5px 12px; border-radius: 6px; }
+html.desk .reg-page .door-log { padding: 8px 14px 8px 30px; }
+html.desk .door-groups { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; align-items: start; margin-bottom: 12px; }
+html.desk .door-groups .dk-panel { margin-bottom: 0; }

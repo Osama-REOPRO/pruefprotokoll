@@ -24,12 +24,15 @@ export async function exportVisit(visitId) {
   const pick = async (store, ids) => (await Promise.all([...ids].filter(Boolean).map(id => db.get(store, id)))).filter(Boolean);
   const gates = await pick('gates', gateIds);
   gates.forEach(g => { siteIds.add(g.siteId); custIds.add(g.customerId); });
+  // Frühere Protokolle dieser Türen (auch nachgetragene Papierprotokolle) mitschicken, damit vor Ort „letztes Mal“ da ist
+  const history = (await db.all('inspections')).filter(i => i.visitId !== visitId && gateIds.has(i.gateId) && i.status === 'done');
+  history.forEach(i => { custIds.add(i.customerId); siteIds.add(i.siteId); });
   const sites = await pick('sites', siteIds);
   sites.forEach(s => custIds.add(s.customerId));
   const photos = await Promise.all((await pick('photos', photoIds)).map(async ({ blob, ...rest }) => ({ ...rest, data: blob ? await blobToDataURL(blob) : null })));
   return {
     format: FORMAT, version: 1, exportedAt: new Date().toISOString(),
-    visit, inspections, customers: await pick('customers', custIds), sites, gates, photos,
+    visit, inspections: [...inspections, ...history], customers: await pick('customers', custIds), sites, gates, photos,
   };
 }
 
