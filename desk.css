@@ -294,3 +294,10 @@ html.desk .sel-b { padding: 5px 12px; border-radius: 6px; }
 html.desk .reg-page .door-log { padding: 8px 14px 8px 30px; }
 html.desk .door-groups { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; align-items: start; margin-bottom: 12px; }
 html.desk .door-groups .dk-panel { margin-bottom: 0; }
+html.desk .sec-sw { margin: 0 0 6px; font-size: .9em; }
+html.desk .sec-sw .sw { width: 36px; height: 20px; }
+html.desk .sec-sw .sw i { width: 14px; height: 14px; }
+html.desk .sec-sw.on .sw i { left: 18px; }
+html.desk .todo-wrap { padding: 6px 14px; }
+html.desk .todo-card { margin-bottom: 12px; }
+html.desk .dc-lbl .todo-box { font-size: .95em; }

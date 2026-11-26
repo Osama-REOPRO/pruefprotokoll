@@ -43,14 +43,16 @@ export const TEMPLATE_TUER = {
     },
   ],
 
+  // always: Abschnitt hat jede Tür / jedes Tor, kein Ein/Aus-Schalter. Alle anderen lassen sich je Tür ausschalten
+  // (bei einer neuen Tür zuerst aus); der Schalter wird an der Tür gespeichert.
   sections: [
-    { id: 'allg', title: '1. Allgemein', items: [
+    { id: 'allg', always: true, title: '1. Allgemein', items: [
       { id: 'allg.einbau', label: 'Sichtkontrolle der Einbausituation' },
       { id: 'allg.schliess', label: 'Schließfunktion prüfen' },
       { id: 'allg.blatt', label: 'Sichtkontrolle von Türblatt und Zarge' },
       { id: 'allg.schild', label: 'Kennzeichnungsschild(er)', extra: { type: 'single', options: ['ja', 'nein'] } },
     ]},
-    { id: 'schloss', title: '2. Schloss', items: [
+    { id: 'schloss', always: true, title: '2. Schloss', items: [
       { id: 'schloss.beschlag', label: 'Schloss, Garnitur und Beschläge prüfen ggf. nachziehen' },
       { id: 'schloss.funktion', label: 'Schließfunktion kontrollieren u. justieren' },
     ]},
@@ -58,14 +60,14 @@ export const TEMPLATE_TUER = {
       { id: 'mitnehmer.voreilung', label: 'Voreilung d. Gangflügels prüfen, nachstellen + fetten (Rolle <1mm)' },
       { id: 'mitnehmer.befestigung', label: 'Befestigung prüfen ggf. nachziehen' },
     ]},
-    { id: 'baender', title: '4. Bänder', items: [
+    { id: 'baender', always: true, title: '4. Bänder', items: [
       { id: 'baender.sitz', label: 'Befestigung und Sitz/Flucht kontrollieren' },
       { id: 'baender.fetten', label: 'Banddorne fetten' },
     ]},
-    { id: 'blatt', title: '5. Türblatt', items: [
+    { id: 'blatt', always: true, title: '5. Türblatt', items: [
       { id: 'blatt.bolzen', label: 'Sicherungsbolzen vorhanden und Sitz (fest)' },
     ]},
-    { id: 'schliesser', title: '6. Schließmittel Türschließer', items: [
+    { id: 'schliesser', always: true, title: '6. Schließmittel Türschließer', items: [
       { id: 'schliesser.befestigung', label: 'Türschließerbefestigungen überprüfen ggf. nachziehen' },
       { id: 'schliesser.vorgang', label: 'Schließvorgang prüfen ggf. einstellen' },
       { id: 'schliesser.kraft', label: 'Schließkraft u. -geschwindigkeit prüfen ggf. einstellen' },
@@ -77,7 +79,7 @@ export const TEMPLATE_TUER = {
       { id: 'federband.einstellen', label: 'Federband einstellen (Stahlblechtüren)' },
       { id: 'federband.fetten', label: 'Federbanddorne fetten und spannen' },
     ]},
-    { id: 'dicht', title: '8. Luftspalte und Dichtungen', items: [
+    { id: 'dicht', always: true, title: '8. Luftspalte und Dichtungen', items: [
       { id: 'dicht.luftspalt', label: 'Umlaufende + mittige Luftspalte gemäß Zulassung prüfen' },
       { id: 'dicht.zarge', label: 'Zargen- und Bodendichtung auf Beschädigungen prüfen' },
       { id: 'dicht.einlagen', label: 'Aufschäumende Einlagen prüfen' },

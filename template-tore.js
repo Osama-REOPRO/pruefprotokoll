@@ -69,8 +69,10 @@ export const TEMPLATE_TORE = {
   ],
 
   // Prüfpunkte. "extra" = zusätzliche Angabe in der Zeile (Auswahl oder Text).
+  // always: Abschnitt hat jede Tür / jedes Tor, kein Ein/Aus-Schalter. Alle anderen lassen sich je Tür ausschalten
+  // (bei einer neuen Tür zuerst aus); der Schalter wird an der Tür gespeichert.
   sections: [
-    { id: 'panzer', title: 'Panzer / Torblatt / Gitter', items: [
+    { id: 'panzer', always: true, title: 'Panzer / Torblatt / Gitter', items: [
       { id: 'panzer.zustand', label: 'Zustand / Verschleiß' },
       { id: 'panzer.sturm', label: 'Seitenarretierung / Sturmanker / Sturmrollen' },
       { id: 'panzer.aufhaengung', label: 'Aufhängung / Befestigungsschrauben' },
@@ -94,7 +96,7 @@ export const TEMPLATE_TORE = {
       { id: 'kette.schutz', label: 'Kettenschutz' },
       { id: 'kette.raeder', label: 'Kettenräder; Verschleiß; fester Sitz' },
     ]},
-    { id: 'steuerung', title: 'Schaltautomat und Steuergeräte', items: [
+    { id: 'steuerung', always: true, title: 'Schaltautomat und Steuergeräte', items: [
       { id: 'steuerung.hauptschalter', label: 'Hauptschalter abschließbar / Netztrennung' },
       { id: 'steuerung.motorschutz', label: 'Motorschutz / Thermopille' },
       { id: 'steuerung.endschalter', label: 'Endschalter / Not-Austaster', extra: { type: 'multi', options: ['Endschalter', 'Not-Austaster'] } },
@@ -111,11 +113,11 @@ export const TEMPLATE_TORE = {
       { id: 'feststell.anlage', label: 'Feststellanlage Typ / Hersteller', extra: { type: 'text', placeholder: 'z. B. FHK-I' } },
       { id: 'feststell.ausloese', label: 'Auslöseelemente Typ / Hersteller / Anzahl / Anordnung', extra: { type: 'text', placeholder: 'z. B. 2x ORM 130 A, HAT 2 Stück' } },
     ]},
-    { id: 'schilder', title: 'Beschilderung', items: [
+    { id: 'schilder', always: true, title: 'Beschilderung', items: [
       { id: 'schilder.typenschild', label: 'Typenschild' },
       { id: 'schilder.hinweis', label: 'Hersteller- und Bedienschild, Hinweisschild' },
     ]},
-    { id: 'antrieb', title: 'Antrieb', items: [
+    { id: 'antrieb', always: true, title: 'Antrieb', items: [
       { id: 'antrieb.befestigung', label: 'Motor-, Konsolenbefestigung' },
       { id: 'antrieb.notentriegelung', label: 'Notentriegelung' },
       { id: 'antrieb.verriegelung', label: 'Elektrische Verriegelung' },
@@ -128,7 +130,7 @@ export const TEMPLATE_TORE = {
       { id: 'welle.lager', label: 'Lager, Stellringe' },
       { id: 'welle.konsole', label: 'Befestigung der Lagerkonsole' },
     ]},
-    { id: 'schienen', title: 'Führungsschienen und Laufschienen', items: [
+    { id: 'schienen', always: true, title: 'Führungsschienen und Laufschienen', items: [
       { id: 'schienen.befestigung', label: 'Befestigung, Zustand' },
       { id: 'schienen.schmierung', label: 'Verschleiß, Schmierung' },
       { id: 'schienen.einlauf', label: 'Einlauftrichter / Einlauf' },

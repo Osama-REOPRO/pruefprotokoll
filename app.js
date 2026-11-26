@@ -54,7 +54,13 @@ let step = 0;         // 0 = Stammdaten, 1..n = Abschnitte, n+1 = Abschluss
 let undoState = null;
 
 const stepCount = () => tpl.sections.length + 2;
-const allItems = () => tpl.sections.flatMap(s => s.items).filter(it => it.id);
+// Abschnitt ausgeschaltet (betrifft diese Tür nicht)? Ältere Protokolle ohne Schalter: alles an.
+const secOff = (sec, i = insp) => !!sec && !sec.always && i?.secOn?.[sec.id] === false;
+const stepOff = (n) => n > 0 && n < stepCount() - 1 && secOff(tpl.sections[n - 1]);
+const defaultSecOn = (t) => Object.fromEntries(t.sections.filter(x => !x.always).map(x => [x.id, false]));
+// Für eine Tür ohne gespeicherte Schalter: an, wenn im letzten Protokoll dort etwas eingetragen war
+const secOnFrom = (t, answers) => Object.fromEntries(t.sections.filter(x => !x.always).map(x => [x.id, x.items.some(it => answers?.[it.id]?.s || (answers?.[it.id]?.x ?? '') !== '')]));
+const allItems = () => tpl.sections.filter(x => !secOff(x)).flatMap(s => s.items).filter(it => it.id);
 const isCheck = (it) => it.id && !it.noStatus;
 const checkItems = () => allItems().filter(isCheck);
 
@@ -71,6 +77,7 @@ function stats() {
 
 function stepStatus(i) {
   if (i === 0) return isMarked(0) ? 'done' : 'open';
+  if (stepOff(i)) return 'off';
   if (i === stepCount() - 1) return insp.status === 'done' ? 'done' : 'open';
   const sec = tpl.sections[i - 1];
   const st = sec.items.filter(isCheck).map(it => insp.answers[it.id]?.s);
@@ -296,6 +303,7 @@ async function routeInner() {
       tpl = TEMPLATES[insp.templateId];
       // Neue Angaben der Tür und jüngstes Protokoll (auch nachgetragenes Papier) übernehmen
       if (insp.gateId && insp.status !== 'done' && !insp.paper) await refreshFromDoor(insp);
+      await loadTodos();
       // Anzahl der Flügel steht jetzt unter Grunddaten Tür (früher bei Tür)
       if (insp.header?.tuer?.fluegel && !insp.header.grund?.fluegel) { (insp.header.grund ||= {}).fluegel = insp.header.tuer.fluegel; delete insp.header.tuer.fluegel; }
       // Name des Kunden-Unterzeichners vom letzten Tor dieses Termins vorschlagen
@@ -319,6 +327,8 @@ async function routeInner() {
 }
 window.addEventListener('hashchange', route);
 const go = (s) => { location.hash = `#/p/${insp.id}/${s}`; };
+// Nächster / voriger Abschnitt, ausgeschaltete Abschnitte werden übersprungen
+function stepBy(d) { let n = step + d; while (stepOff(n)) n += d; return Math.max(0, Math.min(stepCount() - 1, n)); }
 
 // ---------- Startseite ----------
 // ---------- Suchen (Tür-Nr. zuerst) und doppelte Türen erkennen ----------
@@ -449,7 +459,7 @@ function inspSub(i) {
 }
 function progressMini(i) {
   const t = TEMPLATES[i.templateId];
-  const items = t.sections.flatMap(s => s.items).filter(isCheck);
+  const items = t.sections.filter(x => !secOff(x, i)).flatMap(s => s.items).filter(isCheck);
   const answered = items.filter(it => i.answers?.[it.id]?.s).length;
   const defects = items.filter(it => i.answers?.[it.id]?.s === 'b').length;
   return `<span class="mini-progress"><span style="width:${Math.round(answered / items.length * 100)}%"></span></span>
@@ -495,13 +505,14 @@ async function newInspection(prefill = {}, { open = true, step: startStep = 0 } 
     visitId: prefill.visitId || null, pairId: prefill.pairId || null, order: prefill.order ?? Date.now(),
     prev, prevDatum: prefill.prevDatum || null, prevRemarks: prefill.prevRemarks || '', prevId: prefill.prevId || null,
     gateBase: prefill.gateBase || null, paper: !!prefill.paper, returnTo: prefill.returnTo || null,
+    secOn: structuredClone(prefill.secOn || defaultSecOn(tplNew)),
     answers, remarks: '', angebot: false, ort: '', datum: prefill.datum ?? todayDE(),
     sig: { ag: { name: prefill.agName || '', img: null, absent: false }, an: { name: prefill.paper ? '' : settings.get('techName', ''), img: null } },
     lastStep: startStep,
   };
   // Neue Tür / neues Tor: sofort als eigener Datensatz im Register anlegen (nicht erst beim Abschließen)
   if (!rec.gateId && rec.siteId && !rec.paper) {
-    const g = { id: uid(), siteId: rec.siteId, customerId: rec.customerId, templateId: rec.templateId, data: doorData(rec), createdFrom: rec.id };
+    const g = { id: uid(), siteId: rec.siteId, customerId: rec.customerId, templateId: rec.templateId, data: doorData(rec), createdFrom: rec.id, secOn: { ...rec.secOn } };
     rec.gateId = g.id; rec.freshGate = true;
     await saveGate(g);
   }
@@ -518,15 +529,15 @@ function stepTitle(i) {
 }
 // Großer Bildschirm: Abschnitte dauerhaft links (auf dem Handy per CSS ausgeblendet)
 function sideSteps() {
-  const labels = { done: '✓', defect: '✗', open: '' };
+  const labels = { done: '✓', defect: '✗', open: '', off: '–' };
   return `<aside class="side-steps">${Array.from({ length: stepCount() }, (_, i) => {
     const st = stepStatus(i);
     let count = '';
     if (i > 0 && i < stepCount() - 1) {
       const items = tpl.sections[i - 1].items.filter(isCheck);
-      count = items.length ? `${items.filter(it => insp.answers[it.id]?.s).length}/${items.length}` : '';
+      count = stepOff(i) ? 'aus' : items.length ? `${items.filter(it => insp.answers[it.id]?.s).length}/${items.length}` : '';
     }
-    return `<button class="side-step ${i === step ? 'cur' : ''}" data-act="goto" data-step="${i}"><span class="dot st-${st}">${labels[st] ?? ''}</span><span class="side-t">${esc(stepTitle(i))}</span><span class="muted small">${count}</span></button>`;
+    return `<button class="side-step ${i === step ? 'cur' : ''} ${st === 'off' ? 'off' : ''}" data-act="goto" data-step="${i}"><span class="dot st-${st}">${labels[st] ?? ''}</span><span class="side-t">${esc(stepTitle(i))}</span><span class="muted small">${count}</span></button>`;
   }).join('')}
   <button class="side-help" data-act="keys">⌨ Tastenkürzel <kbd>?</kbd></button></aside>`;
 }
@@ -603,12 +614,13 @@ function renderHeader() {
       <div class="grid">
       ${g.fields.filter(f => !f.showIf || vals[f.showIf[0]] === f.showIf[1]).map(f => f.type === 'choice' ? `
         <div class="fld">
-          <span class="lbl">${esc(f.label)}</span>
+          <span class="lbl">${esc(f.label)}${pinBtn(`h:${g.id}.${f.key}`, f.label)}</span>
           <span class="chips opt">${f.options.map(o => `<button type="button" class="chip ${vals[f.key] === o ? 'on' : ''}" data-act="hchoice" data-h="${g.id}.${f.key}" data-v="${esc(o)}">${esc(o)}</button>`).join('')}</span>
           ${g.scope === 'gate' && !f.perInspection ? chgNote(g.id, f.key) : ''}
+          ${todoBox(`h:${g.id}.${f.key}`)}
         </div>` : `
         <label class="fld ${f.half ? 'half' : ''}">
-          <span class="lbl">${esc(f.label)}${f.required ? ' <i class="req">*</i>' : ''}</span>
+          <span class="lbl">${esc(f.label)}${f.required ? ' <i class="req">*</i>' : ''}${pinBtn(`h:${g.id}.${f.key}`, f.label)}</span>
           <span class="inwrap">
             <input class="field" data-h="${g.id}.${f.key}" value="${esc(vals[f.key])}"
               ${f.inputmode ? `inputmode="${f.inputmode}"` : ''} enterkeyhint="next" autocomplete="off"
@@ -617,6 +629,7 @@ function renderHeader() {
             ${f.unit ? `<span class="unit">${esc(f.unit)}</span>` : ''}
           </span>
           ${g.scope === 'gate' && !f.perInspection ? chgNote(g.id, f.key) : ''}
+          ${todoBox(`h:${g.id}.${f.key}`)}
           ${f.suggest && !DESK ? `<span class="chips">${f.suggest.map(s => `<button type="button" class="chip" data-act="fill" data-h="${g.id}.${f.key}" data-v="${esc(s)}">${esc(s)}</button>`).join('')}</span>` : ''}
         </label>`).join('')}
       </div>
@@ -635,7 +648,8 @@ function renderHeader() {
           <p><b>Nichts geändert seit ${esc(insp.prevDatum || 'letztem Mal')}?</b><br>Alle Häkchen, Angaben und Mängelbeschreibungen übernehmen und direkt zum Abschluss.</p>
           <button class="big-btn primary" data-act="copyAll">↺ Alles wie letztes Mal</button>
         </section>
-        <p class="hint">Oder Daten unten prüfen und dann Abschnitt für Abschnitt bestätigen.</p>` : (insp.gateId && !insp.paper ? '<p class="hint">Daten vom letzten Mal übernommen. Nur prüfen, was sich geändert hat.</p>' : '')}
+        <p class="hint">Oder Daten unten prüfen und dann Abschnitt für Abschnitt bestätigen.</p>` : (insp.gateId && !insp.paper && !insp.freshGate ? '<p class="hint">Daten vom letzten Mal übernommen. Nur prüfen, was sich geändert hat.</p>' : '')}
+      ${todoListCard()}
       <div id="dupWarn" class="dup-warn"></div>
       ${insp.visitId ? `<button class="hint pair-line" data-act="movePairAsk" data-id="${insp.id}"><span>Kunde und Objekt kommen vom Termin:</span> <b>${esc(pairLabel({ objekt: insp.header.objekt, kunde: insp.header.kunde }))}</b> <span class="link-ish">ändern ›</span></button>` : ''}
       ${groups}
@@ -691,6 +705,7 @@ async function linkGate(gid) {
   const old = insp.gateId && insp.gateId !== gid ? await db.get('gates', insp.gateId) : null;
   if (old?.createdFrom === insp.id && !(await db.all('inspections')).some(x => x.id !== insp.id && x.gateId === old.id)) await db.del('gates', old.id);
   insp.gateId = gid; insp.freshGate = false; insp.gateBase = pre.gateBase;
+  await loadTodos();
   for (const [k, val] of Object.entries(pre.header)) {
     if (k === 'kunde' || k === 'objekt') continue;
     const mine = Object.fromEntries(Object.entries(insp.header[k] || {}).filter(([, x]) => x !== '' && x != null));
@@ -731,7 +746,7 @@ function rowHTML(it) {
     const input = it.choice
       ? `<div class="chips opt">${it.choice.map(o => `<button class="chip ${a.x === o ? 'on' : ''}" data-act="xchoice" data-id="${it.id}" data-v="${esc(o)}">${esc(o)}</button>`).join('')}</div>`
       : `<input class="field sm" data-x="${it.id}" value="${esc(a.x)}" ${it.inputmode ? `inputmode="${it.inputmode}"` : ''} enterkeyhint="next" autocomplete="off">`;
-    return `<div class="row info" id="r-${it.id}"><label class="row-lbl">${esc(it.label)}</label>${input}</div>`;
+    return `<div class="row info" id="r-${it.id}"><label class="row-lbl">${esc(it.label)}${pinBtn('i:' + it.id, it.label)}</label>${todoBox('i:' + it.id)}${input}</div>`;
   }
   const s = a.s;
   const p = insp.prev?.[it.id] || {};
@@ -762,8 +777,9 @@ function rowHTML(it) {
     : `<button class="note-btn" data-act="noteOpen" data-id="${it.id}">✎ Notiz${p.note ? ` <span class="muted">(letztes Mal: ${esc(p.note)})</span>` : ''}</button>`) + (s === 'b' ? dBtn + (!a.note && !openNotes.has(it.id) ? '</div>' : '') : '');
   const ghost = (v) => !s && p.s === v ? 'ghost' : '';
   return `<div class="row ${s || ''} ${!s && p.s ? 'has-prev' : ''} ${p.s === 'b' ? 'was-b' : ''}" id="r-${it.id}">
-    <div class="row-lbl">${esc(it.label)}${guideLink(it)}</div>
+    <div class="row-lbl">${esc(it.label)}${guideLink(it)}${pinBtn('i:' + it.id, it.label)}</div>
     ${prevDefect}
+    ${todoBox('i:' + it.id)}
     ${extra}
     <div class="seg2 n${(tpl.states || ['ok', 'b']).length}" role="group">
       ${(tpl.states || ['ok', 'b']).map(v => { const [cls, icon, txt] = STATE_BTN[v];
@@ -784,7 +800,44 @@ function guideLink(it) {
   return href ? ` <a class="guide-link" href="${href}" aria-label="Im Handbuch nachlesen" title="Im Handbuch nachlesen">📖</a>` : '';
 }
 
+// Ein/Aus-Schalter für Abschnitte, die nicht jede Tür hat
+function secSwitch(i) {
+  const sec = tpl.sections[i - 1];
+  if (!sec || sec.always) return '';
+  const on = !secOff(sec);
+  return `<button class="sec-sw ${on ? 'on' : ''}" role="switch" aria-checked="${on}" data-act="secToggle" data-step="${i}"><span class="sw"><i></i></span>${on ? 'Abschnitt an' : 'Abschnitt aus'}</button>`;
+}
+async function secToggle(i) {
+  const sec = tpl.sections[i - 1]; if (!sec || sec.always) return;
+  const turnOff = !secOff(sec);
+  const before = Object.fromEntries(sec.items.map(it => [it.id, insp.answers[it.id]]).filter(([, a]) => a)), wasMarked = isMarked(i);
+  insp.secOn = { ...(insp.secOn || Object.fromEntries(tpl.sections.filter(x => !x.always).map(x => [x.id, true]))), [sec.id]: !turnOff };
+  if (turnOff) { for (const it of sec.items) delete insp.answers[it.id]; setMarked(i, false); }
+  buzz(15); await saveNow(); syncSecOn(); renderStepKeepScroll();
+  if (turnOff && Object.keys(before).length) undoInline('Abschnitt ausgeschaltet, Einträge entfernt', () => {
+    insp.secOn = { ...insp.secOn, [sec.id]: true };
+    for (const [id, a] of Object.entries(before)) if (!insp.answers[id]) insp.answers[id] = a;
+    if (wasMarked) setMarked(i, true);
+    saveNow(); syncSecOn(); renderStepKeepScroll();
+  });
+}
+// Schalter gehören zur Tür: dort speichern, damit die nächste Prüfung gleich so startet
+async function syncSecOn() {
+  if (!insp?.gateId) return;
+  const g = await db.get('gates', insp.gateId); if (!g) return;
+  g.secOn = { ...(insp.secOn || {}) }; await saveGate(g);
+}
 function renderSection(sec) {
+  if (secOff(sec)) {
+    if (paint(`${topBar()}
+      <main class="step">
+        ${secTitle()}
+        ${secSwitch(step)}
+        <p class="muted off-note">Ausgeschaltet: diesen Abschnitt hat diese ${esc(unitOf(insp).noun)} nicht. Er wird ausgeblendet und beim nächsten Mal auch.</p>
+      </main>
+      ${bottomBar('Weiter ›')}`)) return;
+    return;
+  }
   const untouched = sec.items.filter(isCheck).filter(it => !insp.answers[it.id]?.s);
   const prevAvail = untouched.some(it => insp.prev?.[it.id]?.s);
   const t = unitOf(insp);
@@ -801,7 +854,9 @@ function renderSection(sec) {
   if (paint(`${topBar()}
     <main class="step">
       ${summary}
+      ${first && !DESK ? todoListCard() : ''}
       ${secTitle()}
+      ${secSwitch(step)}
       <div class="sec-tools">
         ${insp.prev ? `<button class="tool prev" data-act="asLast" data-step="${step}" ${prevAvail ? '' : 'disabled'}>↺ Wie letztes Mal</button>` : ''}
         <button class="tool ok" data-act="allOk" data-step="${step}" ${untouched.length ? '' : 'disabled'}>✓ Rest o.B.</button>
@@ -886,7 +941,7 @@ function renderFinish() {
   const st = stats();
   const defects = allItems().filter(it => insp.answers[it.id]?.s === 'b');
   if (!insp.ort) insp.ort = (insp.header.objekt?.plzOrt || '').replace(/^\s*\d{5}\s*/, '');
-  const openSecs = tpl.sections.map((s, i) => ({ s, i, n: s.items.filter(it => !insp.answers[it.id]?.s).length })).filter(x => x.n);
+  const openSecs = tpl.sections.filter(x => !secOff(x)).map((s, i) => ({ s, i, n: s.items.filter(it => !insp.answers[it.id]?.s).length })).filter(x => x.n);
   const savedSig = settings.get('techSig', null);
 
   if (paint(`${topBar()}
@@ -1066,7 +1121,7 @@ async function upsertMasterData() {
   if (!newer && g.customerId && insp.customerId && g.customerId !== insp.customerId) {
     changes.push({ field: 'Kunde', from: (await db.get('customers', g.customerId))?.name || '–', to: h.kunde?.name || '–' });
   }
-  if (!newer || !g.siteId) { g.siteId = insp.siteId; g.customerId = insp.customerId; }
+  if (!newer || !g.siteId) { g.siteId = insp.siteId; g.customerId = insp.customerId; if (insp.secOn) g.secOn = { ...insp.secOn }; }
   g.templateId ||= tpl.id;
   delete g.createdFrom;
   insp.freshGate = false;
@@ -1085,6 +1140,7 @@ async function prefillFromGate(gateId, { withPrev = true } = {}) {
   const last = withPrev ? await latestProto(gateId) : null;
   return { gateId, siteId: g.siteId, customerId: g.customerId, templateId: g.templateId,
     header: { kunde: strip(cust), objekt: strip(site), ...structuredClone(g.data || {}) }, gateBase: structuredClone(g.data || {}),
+    secOn: g.secOn ? structuredClone(g.secOn) : last ? secOnFrom(TEMPLATES[g.templateId], last.answers) : null,
     prev: last ? structuredClone(last.answers) : null, prevDatum: last?.datum || null, prevRemarks: last?.remarks || '', prevId: last?.id || null };
 }
 async function fromGate(gateId) { await newInspection(await prefillFromGate(gateId)); }
@@ -1154,7 +1210,7 @@ async function duplicateItem(id) {
   }
   const rec = await newInspection({
     templateId: src.templateId, header, customerId: src.customerId, siteId: src.siteId, gateId: null,
-    visitId: src.visitId, pairId: src.pairId, order: (src.order ?? 0) + 0.5, agName: src.sig?.ag?.name || '',
+    visitId: src.visitId, pairId: src.pairId, order: (src.order ?? 0) + 0.5, agName: src.sig?.ag?.name || '', secOn: src.secOn || null,
   }, { open: false });
   Object.assign(rec, { answers, angebot: !!src.angebot, ort: src.ort || '', copiedFrom: src.id, maxStep: t.sections.length, checked: Object.fromEntries(Object.entries(src.checked || {}).filter(([k]) => k !== 'head')) });
   await db.put('inspections', rec);
@@ -1377,13 +1433,13 @@ function sortBarHTML() {
     <button class="icon-btn sm sort-dir" data-act="sortDir" aria-label="${d === 1 ? 'Aufsteigend' : 'Absteigend'}" title="Richtung umkehren">${d === 1 ? '↑' : '↓'}</button></div>`;
 }
 
-function itemRow(i, dup = false) {
+function itemRow(i, dup = false, todoN = 0) {
   const [cls, label] = itemState(i);
   const t = unitOf(i);
   return `<div class="gate-line"><button class="gate-row st-${cls}" data-act="openItem" data-id="${i.id}">
     <span class="gate-ico">${{ fertig: '✓', maengel: '✗', arbeit: '…', offen: '' }[cls]}</span>
     <span class="gate-txt"><b>${esc(t.standort || `${t.noun} ohne Standort`)}</b><br><span class="muted small"><span class="kind">${esc(t.noun)}</span> ${esc(unitSub(t))}</span></span>
-    ${dup ? dupPill : ''}<span class="pill ${cls === 'maengel' ? 'red' : cls === 'fertig' ? 'green' : ''}">${label}</span></button>
+    ${dup ? dupPill : ''}${i.status !== 'done' ? todoPill(todoN) : ''}<span class="pill ${cls === 'maengel' ? 'red' : cls === 'fertig' ? 'green' : ''}">${label}</span></button>
     <button class="dup-btn" data-act="menu" data-for="item" data-id="${i.id}" aria-label="Mehr zu ${esc(t.noun)}">⋯</button></div>`;
 }
 async function renderVisit() {
@@ -1397,7 +1453,8 @@ async function renderVisit() {
   const dups = dupSet(all);
   const q = visitQuery.trim();
   const shown = (list) => q ? list.filter(i => matchScore(i, q) > 0) : list;
-  const rowM = (i) => itemRow(i, dups.has(i.id));
+  const tN = await todoCounts();
+  const rowM = (i) => itemRow(i, dups.has(i.id), tN.get(i.gateId) || 0);
   const list = q ? (() => { const hits = sortItems(shown(items), v).sort((a, b) => matchScore(b[0], q) - matchScore(a[0], q)); return hits.map(([i]) => rowM(i)).join('') || '<p class="empty">Keine Tür und kein Tor passt zur Suche.</p>'; })()
     : !items.length ? '<p class="empty">Noch keine Tore oder Türen in diesem Termin.</p>'
     : showAll ? v.pairs.map(p => {
@@ -1712,6 +1769,7 @@ async function syncFreshGate(i) {
   const g = await db.get('gates', i.gateId);
   if (!g || g.createdFrom !== i.id) { i.freshGate = false; return; }
   g.data = doorData(i); g.siteId = i.siteId; g.customerId = i.customerId;
+  if (i.secOn) g.secOn = { ...i.secOn };
   await saveGate(g);
 }
 // Beim Öffnen eines offenen Protokolls: neue Angaben der Tür (z. B. aus einem nachgetragenen Papierprotokoll) und das
@@ -1721,6 +1779,11 @@ async function refreshFromDoor(i) {
   i.freshGate = g.createdFrom === i.id;
   if (i.freshGate) return;
   i.gateBase ||= {};
+  // Abschnitts-Schalter der Tür übernehmen, wo in diesem Protokoll noch nichts eingetragen ist
+  if (g.secOn && i.secOn) for (const x of TEMPLATES[i.templateId].sections) {
+    if (x.always || g.secOn[x.id] === undefined) continue;
+    if (!x.items.some(it => i.answers[it.id])) i.secOn[x.id] = g.secOn[x.id];
+  }
   for (const [gid, f] of doorFields(TEMPLATES[i.templateId])) {
     const gv = g.data?.[gid]?.[f.key]; if (blank(gv)) continue;
     if (blank(i.header[gid]?.[f.key])) (i.header[gid] ||= {})[f.key] = gv;
@@ -1959,6 +2022,14 @@ async function renderDoor(id) {
         <span><span class="muted">Kunde</span> <b>${esc(c?.name || 'kein Kunde')}</b> <button class="mini-link" data-act="moveDoorsAsk" data-id="${g.id}">ändern</button>${c ? ` <button class="mini-link" data-act="editKunde" data-id="${c.id}">✎</button>` : ''}</span>
       </section>
       ${DESK ? '' : `<button class="big-btn primary" data-act="paperNew" data-id="${g.id}">📄 Altes Protokoll (Papier) nachtragen</button>`}
+      ${(() => {
+        const tf = (t) => (t.ref?.startsWith('i:') ? t.label : t.ref?.startsWith('h:') ? t.label : '') || 'Allgemein';
+        const open = (g.todos || []).filter(t => !t.done), done = (g.todos || []).filter(t => t.done).slice(-10).reverse();
+        return panel(`📌 Zu prüfen <span class="muted small">${open.length}</span><button class="mini-link push-r" data-act="todoAdd" data-ref="" data-label="" data-gid="${g.id}">＋ Merken</button>`,
+          `<div class="todo-wrap">${open.map(t => `<div class="todo-li"><span><b>${esc(tf(t))}</b>: ${esc(t.text)} <span class="muted small">${esc(t.src)}</span></span><button class="todo-ok" data-act="todoDone" data-id="${t.id}" title="Erledigt">✓</button><button class="mini-link" data-act="todoDel" data-id="${t.id}" title="Entfernen">✕</button></div>`).join('')
+            || '<p class="muted small">Nichts offen. Beim Nachtragen eines Papierprotokolls jedes Feld mit 📌 merken, oder hier mit „＋ Merken“.</p>'}
+          ${done.length ? `<details class="todo-done"><summary class="muted small">Erledigt (${done.length})</summary>${done.map(t => `<div class="todo-li done"><span><s>${esc(tf(t))}: ${esc(t.text)}</s> <span class="muted small">erledigt ${esc(t.doneDatum || '')}</span></span><button class="mini-link" data-act="todoUndone" data-id="${t.id}">wieder öffnen</button></div>`).join('')}</details>` : ''}</div>`);
+      })()}
       ${panel(`Protokolle <span class="muted small">${protos.length}</span>`, protos.length ? (DESK ? `<table class="dt"><thead><tr><th>Datum</th><th>Herkunft</th><th>Kunde</th><th>Ergebnis</th><th>Bemerkungen</th></tr></thead><tbody>${protos.map(protoRow).join('')}</tbody></table>` : protos.map(protoRow).join(''))
         : `<p class="${DESK ? 'dk-empty' : 'muted'}">Noch keine Protokolle. Alte Papierprotokolle hier nachtragen, dann stehen sie vor Ort als „letztes Mal“ zum Vergleich bereit.</p>`)}
       <div class="door-groups">${groups}</div>
@@ -2044,6 +2115,75 @@ async function editKunde(cid) {
   sheet.classList.add('show');
 }
 
+
+// ---------- Zu prüfen: Merkzettel an der Tür ----------
+// Beim Nachtragen eines Papierprotokolls lässt sich jedes Feld mit 📌 und einer Notiz merken.
+// Die Einträge gehören zur Tür (gate.todos) und erscheinen vor Ort am Feld und oben in einer Liste, bis sie erledigt sind.
+let curTodos = [];
+async function loadTodos() { curTodos = insp?.gateId ? ((await db.get('gates', insp.gateId))?.todos || []) : []; }
+const openTodos = (ref) => curTodos.filter(t => !t.done && (ref === undefined || t.ref === ref));
+function todoBox(ref) {
+  return openTodos(ref).map(t => `<div class="todo-box"><span>📌 <b>Zu prüfen:</b> ${esc(t.text)} <span class="muted small">(${esc(t.src)})</span></span>
+    ${insp.paper ? `<button class="mini-link" data-act="todoDel" data-id="${t.id}">entfernen</button>` : `<button class="todo-ok" data-act="todoDone" data-id="${t.id}">✓ Erledigt</button>`}</div>`).join('');
+}
+const pinBtn = (ref, label) => insp?.paper ? `<button type="button" class="pin-btn" data-act="todoAdd" data-ref="${esc(ref)}" data-label="${esc(label)}" title="Für vor Ort merken: zu prüfen" aria-label="Zu prüfen merken">📌</button>` : '';
+// Zu welchem Abschnitt gehört ein Eintrag? i:<Prüfpunkt> -> Abschnitt, h:<Gruppe.Feld> -> Stammdaten
+function todoStep(t) {
+  if (!t.ref?.startsWith('i:')) return 0;
+  const n = tpl.sections.findIndex(x => x.items.some(it => it.id === t.ref.slice(2)));
+  return n < 0 ? 0 : n + 1;
+}
+function todoListCard() {
+  const list = openTodos(); if (!list.length) return '';
+  return `<section class="card todo-card"><h2>📌 Zu prüfen an dieser ${esc(unitOf(insp).noun)} <span class="muted small">${list.length}</span></h2>
+    ${list.map(t => `<div class="todo-li"><button class="link" data-act="goto" data-step="${todoStep(t)}"><b>${esc(t.label || 'Allgemein')}</b>: ${esc(t.text)}</button>
+      <span class="muted small">${esc(t.src)}</span>${insp.paper ? '' : `<button class="todo-ok" data-act="todoDone" data-id="${t.id}">✓</button>`}</div>`).join('')}</section>`;
+}
+function todoAddSheet(ref, label, gid = null) {
+  const sheet = document.getElementById('sheet');
+  sheet.innerHTML = `<div class="sheet-inner">
+    <div class="sheet-grab"></div>
+    <h2 class="sheet-h">📌 Vor Ort prüfen${label ? `: ${esc(label)}` : ''}</h2>
+    <textarea class="field" rows="3" id="todoText" placeholder="z. B. Schließer war undicht, prüfen ob getauscht"></textarea>
+    <button class="big-btn primary" data-act="todoSave" data-ref="${esc(ref)}" data-label="${esc(label)}" data-gid="${gid || ''}">Merken</button>
+    <button class="big-btn" data-act="cancelDel">Abbrechen</button>
+  </div>`;
+  sheet.classList.add('show');
+  setTimeout(() => document.getElementById('todoText')?.focus(), 50);
+}
+async function todoChange(gid, fn) {
+  const g = await db.get('gates', gid); if (!g) return null;
+  g.todos = fn([...(g.todos || [])]);
+  await saveGate(g);
+  if (insp?.gateId === gid) curTodos = g.todos;
+  if (curDoor?.id === gid) curDoor.todos = g.todos;
+  return g;
+}
+async function todoSave(b) {
+  const text = document.getElementById('todoText')?.value.trim();
+  if (!text) { snack('Bitte kurz notieren, was zu prüfen ist.'); return; }
+  const gid = b.dataset.gid || insp?.gateId; if (!gid) return;
+  const src = insp?.paper ? `vom Papier ${insp.datum || ''}`.trim() : `notiert ${todayDE()}`;
+  await todoChange(gid, (l) => [...l, { id: uid(), ref: b.dataset.ref || '', label: b.dataset.label || '', text, src, at: new Date().toISOString(), done: false }]);
+  closeJump(); buzz();
+  if (insp) renderStepKeepScroll(); else { const y = scrollY; await renderDoor(gid); window.scrollTo(0, y); }
+}
+async function todoSetDone(id, done) {
+  const gid = insp?.gateId || curDoor?.id; if (!gid) return;
+  await todoChange(gid, (l) => l.map(t => t.id === id ? { ...t, done, doneAt: done ? new Date().toISOString() : null, doneDatum: done ? todayDE() : null, doneIn: done ? insp?.id || null : null } : t));
+  buzz(15);
+  const rr = async () => { if (insp) renderStepKeepScroll(); else { const y = scrollY; await renderDoor(gid); window.scrollTo(0, y); } };
+  await rr();
+  if (done) undoInline('Als erledigt markiert', async () => { await todoChange(gid, (l) => l.map(t => t.id === id ? { ...t, done: false, doneAt: null, doneDatum: null, doneIn: null } : t)); rr(); });
+}
+async function todoDel(id) {
+  const gid = insp?.gateId || curDoor?.id; if (!gid) return;
+  await todoChange(gid, (l) => l.filter(t => t.id !== id));
+  if (insp) renderStepKeepScroll(); else { const y = scrollY; await renderDoor(gid); window.scrollTo(0, y); }
+}
+async function todoCounts() { const m = new Map(); for (const g of await db.all('gates')) { const n = (g.todos || []).filter(t => !t.done).length; if (n) m.set(g.id, n); } return m; }
+const todoPill = (n) => n ? `<span class="pill todo-pill" title="${n} Punkte zu prüfen">📌 ${n}</span>` : '';
+
 // ---------- Druckansicht (wie das Papierformular) ----------
 async function renderPrint(ids, backHash) {
   let pages = '';
@@ -2094,7 +2234,7 @@ window.addEventListener('afterprint', fitPrint);
 // ---------- Abschnittswahl (Bottom Sheet) ----------
 function openJump() {
   const sheet = document.getElementById('sheet');
-  const labels = { done: '✓', defect: '✗', open: '' };
+  const labels = { done: '✓', defect: '✗', open: '', off: '–' };
   sheet.innerHTML = `<div class="sheet-inner">
     <div class="sheet-grab"></div>
     ${Array.from({ length: stepCount() }, (_, i) => {
@@ -2102,9 +2242,9 @@ function openJump() {
       let count = '';
       if (i > 0 && i < stepCount() - 1) {
         const items = tpl.sections[i - 1].items;
-        count = `${items.filter(it => insp.answers[it.id]?.s).length}/${items.length}`;
+        count = stepOff(i) ? 'aus' : `${items.filter(it => insp.answers[it.id]?.s).length}/${items.length}`;
       }
-      return `<button class="list-row ${i === step ? 'cur' : ''}" data-act="goto" data-step="${i}">
+      return `<button class="list-row ${i === step ? 'cur' : ''} ${s === 'off' ? 'off' : ''}" data-act="goto" data-step="${i}">
         <span><span class="dot st-${s}">${labels[s] ?? ''}</span>${esc(stepTitle(i))}</span><span class="muted small">${count}</span></button>`;
     }).join('')}
   </div>`;
@@ -2133,9 +2273,15 @@ document.addEventListener('click', async (e) => {
     case 'home': await saveNow(); return (location.hash = insp?.paper ? (insp.returnTo || `#/d/${insp.gateId}`) : insp?.visitId ? `#/t/${insp.visitId}` : '#/');
     case 'jump': return openJump();
     case 'goto': closeJump(); return go(+b.dataset.step);
-    case 'prev': return go(step - 1);
-    case 'next': window.scrollTo(0, 0); return go(step + 1);
-    case 'checkNext': if (!autoDone(step)) setMarked(step, true); saveNow(); window.scrollTo(0, 0); return go(step + 1);
+    case 'prev': return go(stepBy(-1));
+    case 'next': window.scrollTo(0, 0); return go(stepBy(1));
+    case 'checkNext': if (!autoDone(step)) setMarked(step, true); saveNow(); window.scrollTo(0, 0); return go(stepBy(1));
+    case 'todoAdd': return todoAddSheet(b.dataset.ref, b.dataset.label, b.dataset.gid || null);
+    case 'todoSave': return todoSave(b);
+    case 'todoDone': return todoSetDone(b.dataset.id, true);
+    case 'todoUndone': return todoSetDone(b.dataset.id, false);
+    case 'todoDel': return todoDel(b.dataset.id);
+    case 'secToggle': return secToggle(+b.dataset.step);
     case 'secCheck': { const i = +b.dataset.step; setMarked(i, !isMarked(i)); buzz(15); saveNow(); return refreshChrome(); }
     case 'set': return setAnswer(b.dataset.id, b.dataset.v);
     case 'linkGate': return linkGate(b.dataset.id);
@@ -2399,8 +2545,8 @@ document.addEventListener('keydown', (e) => {
   const inSection = all || (step > 0 && step < stepCount() - 1);
   const click = (sel) => { const el = document.querySelector(sel); if (el && !el.disabled) { el.click(); return true; } return false; };
   if (all) {
-    if (k === 'ArrowRight') { e.preventDefault(); return go(Math.min(stepCount() - 1, step + 1)); }
-    if (k === 'ArrowLeft') { e.preventDefault(); return go(Math.max(0, step - 1)); }
+    if (k === 'ArrowRight') { e.preventDefault(); return go(stepBy(1)); }
+    if (k === 'ArrowLeft') { e.preventDefault(); return go(stepBy(-1)); }
     const sec = kbRows()[kbIdx]?.closest('.dk-sec') || document.getElementById(`sec-${step}`);
     if (k === 'a' || k === 'l') { e.preventDefault(); const b = sec?.querySelector(`[data-act=${k === 'a' ? 'allOk' : 'asLast'}]`); if (b && !b.disabled) b.click(); return; }
   }
@@ -2550,7 +2696,7 @@ async function renderVisitDesk() {
   const done = items.filter(i => i.status === 'done').length;
   const withDef = items.filter(i => i.status === 'done' && hasDefects(i)).length;
   const one = !multi ? v.pairs[0] : (showAll ? null : pairById(v, v.filter));
-  const dups = dupSet(all), q = visitQuery.trim();
+  const dups = dupSet(all), q = visitQuery.trim(), tN = await todoCounts();
   const sorted = (list) => { const r = sortItems(q ? list.filter(i => matchScore(i, q) > 0) : list, v); return q ? r.sort((a, b) => matchScore(b[0], q) - matchScore(a[0], q)) : r; };
   const tr = (i, n) => {
     const [cls, label] = itemState(i);
@@ -2559,7 +2705,7 @@ async function renderVisitDesk() {
     return `<tr class="dt-click st-${cls}" data-act="openItem" data-id="${i.id}">
       <td class="num muted">${n}</td>
       <td><span class="kind-tag ${TEMPLATES[i.templateId]?.kind}">${esc(u.noun)}</span></td>
-      <td><b>${esc(u.standort || '–')}</b>${dups.has(i.id) ? ' ' + dupPill : ''}</td>
+      <td><b>${esc(u.standort || '–')}</b>${dups.has(i.id) ? ' ' + dupPill : ''}${i.status !== 'done' && tN.get(i.gateId) ? ' ' + todoPill(tN.get(i.gateId)) : ''}</td>
       <td>${esc(u.nr || '')}</td>
       <td>${esc(u.typ || '')}</td>
       <td>${esc(g.hersteller || '')}</td>
@@ -2607,7 +2753,7 @@ function rowDesk(it) {
     const input = it.choice
       ? `<div class="chips opt">${it.choice.map(o => `<button class="chip ${a.x === o ? 'on' : ''}" data-act="xchoice" data-id="${it.id}" data-v="${esc(o)}">${esc(o)}</button>`).join('')}</div>`
       : `<input class="field sm" data-x="${it.id}" value="${esc(a.x)}" ${it.inputmode ? `inputmode="${it.inputmode}"` : ''} autocomplete="off">`;
-    return `<div class="row drow info" id="r-${it.id}"><div class="dc-lbl">${esc(it.label)}</div><div class="dc-in">${input}</div></div>`;
+    return `<div class="row drow info" id="r-${it.id}"><div class="dc-lbl">${esc(it.label)}${pinBtn('i:' + it.id, it.label)}${todoBox('i:' + it.id)}</div><div class="dc-in">${input}</div></div>`;
   }
   const s = a.s, p = insp.prev?.[it.id] || {}, ex = it.extra;
   let extra = '';
@@ -2629,8 +2775,8 @@ function rowDesk(it) {
       ${thumbsHTML(a.photos, it.id, true)}
     </div>` : '';
   return `<div class="row drow ${s || ''} ${!s && p.s ? 'has-prev' : ''} ${p.s === 'b' ? 'was-b' : ''}" id="r-${it.id}">
-    <div class="dc-lbl">${esc(it.label)}${guideLink(it)}${extra ? ` ${extra}` : ''}
-      ${p.s === 'b' ? `<div class="dc-prev">Letztes Mal B.${insp.prevDatum ? ` (${esc(insp.prevDatum)})` : ''}${p.note ? ': ' + esc(p.note) : ''}</div>` : ''}</div>
+    <div class="dc-lbl">${esc(it.label)}${guideLink(it)}${pinBtn('i:' + it.id, it.label)}${extra ? ` ${extra}` : ''}
+      ${p.s === 'b' ? `<div class="dc-prev">Letztes Mal B.${insp.prevDatum ? ` (${esc(insp.prevDatum)})` : ''}${p.note ? ': ' + esc(p.note) : ''}</div>` : ''}${todoBox('i:' + it.id)}</div>
     <div class="dc-st seg2 n${(tpl.states || ['ok', 'b']).length}" role="group">${states}</div>
     <div class="dc-note">${dOpen ? '<span class="muted small">siehe unten</span>' : `<input class="field xs" data-note="${it.id}" value="${esc(a.note)}" placeholder="${s === 'b' ? 'Mangel beschreiben' : p.note ? 'letztes Mal: ' + esc(p.note) : 'Notiz'}" autocomplete="off">${s === 'b' ? `<button class="tb-btn sm dc-more" data-act="defectOpen" data-id="${it.id}" title="Vorschläge und Foto">📷${a.photos?.length ? ' ' + a.photos.length : ''} ▾</button>` : ''}`}</div>
     ${defect}
