@@ -2432,8 +2432,8 @@ const openINotes = new Set();
 function noteSection(store, id, val) {
   if (!id) return '';
   const key = `${store}:${id}`;
-  if (!val && !openINotes.has(key)) return `<button type="button" class="inote-btn" data-act="inoteOpen" data-key="${key}">🔒 ＋ Interne Notiz</button>`;
-  return `<section class="${DESK ? 'dk-panel' : 'card'} inote-card"><label class="inote-l"><span class="lbl">🔒 Interne Notiz <span class="muted small">nur für uns, nicht im Protokoll</span></span>
+  if (!val && !openINotes.has(key)) return `<button type="button" class="inote-btn" data-act="inoteOpen" data-key="${key}">📝 ＋ Interne Notiz</button>`;
+  return `<section class="${DESK ? 'dk-panel' : 'card'} inote-card"><label class="inote-l"><span class="lbl">📝 Interne Notiz <span class="muted small">nur für uns, nicht im Protokoll</span></span>
     <textarea class="field" rows="2" data-inote="${key}" placeholder="Notiz zu ${INOTE_LBL[store]}">${esc(val || '')}</textarea></label></section>`;
 }
 let inoteChain = Promise.resolve();
