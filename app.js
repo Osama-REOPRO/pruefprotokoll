@@ -267,6 +267,8 @@ async function routeInner() {
   if (parts[0] === 'plan' && parts[1]) {
     if (insp) await saveNow();
     insp = null; tpl = null; visit = null; curDoor = null; doorScope = null;
+    if (!/^#\/plan\//.test(prevHash)) planBack = prevHash || `#/o/${parts[1]}`;
+    planCtx = parts[3] === 't' ? { vid: parts[4] } : parts[3] === 'g' ? { gid: parts[4] } : {};
     return renderPlan(parts[1], parts[2]);
   }
   if (!['p', 'd', 'druck', 'druck-t', 'handbuch'].includes(parts[0])) {
@@ -1570,6 +1572,7 @@ async function renderVisit() {
         ${one ? `<div class="muted small">${esc([one.kunde?.name, [one.objekt?.name, one.objekt?.strasse, one.objekt?.plzOrt].filter(Boolean).join(', ')].filter(Boolean).join(' · '))}</div>` : ''}
         <div class="vprog"><span class="mini-progress"><span style="width:${items.length ? Math.round(done / items.length * 100) : 0}%"></span></span>
         <b>${done} von ${items.length} fertig</b></div>
+        ${await visitHasPlan(v) ? '<button class="big-btn plan-open" data-act="planOpenVisit">🗺 Auf dem Etagenplan zeigen</button>' : ''}
       </section>
       ${items.length > 1 ? searchBox('visitSearch', visitQuery, 'Suchen: Tür-Nr., Standort …') : ''}
       ${items.length > 1 && !q ? sortBarHTML() : ''}
@@ -2276,7 +2279,7 @@ async function renderDoor(id) {
         <div class="dup-acts">${twins.map(x => `<button class="dup-b" data-act="openDoor" data-id="${x.id}">Zur anderen: ${esc(x.standort || 'ohne Standort')} ›</button>`).join('')}</div></div>` : ''}
       <section class="${DESK ? 'dk-sum' : 'card'} door-who">
         <span><span class="muted">Objekt</span> <a class="link" href="#/o/${g.siteId}" title="Objekt öffnen">${esc(sname(st))}</a></span>
-        <span class="door-et"><span class="muted">Etage</span> ${etageSelect(st, g.etageId, g.id)}</span>
+        <span class="door-et"><span class="muted">Etage</span> ${etageSelect(st, g.etageId, g.id)}${floorsOf(st).some(f => f.map) ? ` <button class="mini-link" data-act="planFor" data-id="${g.id}">📍 ${g.pos ? 'Auf dem Plan zeigen' : 'Auf dem Plan setzen'}</button>` : ''}</span>
         <span><span class="muted">Kunde</span> ${c ? `<a class="link" href="#/k/${c.id}" title="Kunde öffnen">${esc(c.name || 'ohne Namen')}</a>` : '<b>kein Kunde</b>'} <button class="mini-link" data-act="moveDoorsAsk" data-id="${g.id}">ändern</button></span>
       </section>
       ${DESK ? '' : `<button class="big-btn primary" data-act="paperNew" data-id="${g.id}">📄 Altes Protokoll (Papier) nachtragen</button>`}
@@ -2609,7 +2612,7 @@ async function flUpdate(siteId, fn) {
 // Bild liegt im Speicher "photos" ({ planSite, planEtage }), die Etage zeigt mit etage.map = { photoId, w, h } darauf.
 let planCtl = null, planUrl = null, planCur = null;
 const FINE = matchMedia('(hover: hover) and (pointer: fine)');
-function planClose() { planCtl?.destroy(); planCtl = null; planCur = null; if (planUrl) { URL.revokeObjectURL(planUrl); planUrl = null; } document.documentElement.classList.remove('pv-open'); }
+function planClose() { planCtl?.destroy(); planCtl = null; planCur = null; PS = null; if (planUrl) { URL.revokeObjectURL(planUrl); planUrl = null; } document.documentElement.classList.remove('pv-open'); }
 // cam: direkt die Kamera öffnen (Handy / Tablet)
 const planUpBtn = (sid, fid, label, cls = 'chip', cam = false) => `<label class="${cls} plan-up">${label}<input type="file" accept="image/*" ${cam ? 'capture="environment"' : ''} data-planup="${sid}:${fid}" hidden></label>`;
 // Auf Touch-Geräten: Foto aufnehmen oder Bild wählen; am PC direkt die Dateiauswahl
@@ -2628,7 +2631,9 @@ async function renderPlan(sid, fid) {
   const st = await db.get('sites', sid); if (!st) { location.hash = '#/o'; return; }
   const fl = floorsOf(st), f = fl.find(x => x.id === fid) || fl.find(x => x.map) || fl[0];
   if (!f) { location.hash = `#/o/${sid}`; return; }
-  if (f.id !== fid) { history.replaceState(null, '', `#/plan/${sid}/${f.id}`); lastHash = location.hash; }
+  // Tür zeigen: liegt sie auf einer anderen Etage, dorthin wechseln
+  if (planCtx.gid) { const g0 = await db.get('gates', planCtx.gid); if (g0?.pos?.etageId && g0.pos.etageId !== fid && fl.some(x => x.id === g0.pos.etageId)) { location.replace(`#/plan/${sid}/${g0.pos.etageId}${planSuffix()}`); return; } }
+  if (f.id !== fid) { history.replaceState(null, '', `#/plan/${sid}/${f.id}${planSuffix()}`); lastHash = location.hash; }
   const ph = f.map?.photoId && await db.get('photos', f.map.photoId);
   if (ph?.blob) planUrl = URL.createObjectURL(ph.blob);
   planCur = { sid, fid: f.id };
@@ -2640,17 +2645,19 @@ async function renderPlan(sid, fid) {
       <button class="pv-b" data-act="pvRot" data-d="-15" title="Nach links drehen ( Q )">⟲</button><span class="pv-val" id="pvR">0°</span><button class="pv-b" data-act="pvRot" data-d="15" title="Nach rechts drehen ( E )">⟳</button>
       <span class="pv-sep"></span>
       <button class="pv-b wide" data-act="pvNorth" title="Drehung auf 0° ( R )">⬆ Gerade</button><button class="pv-b wide" data-act="pvFit" title="Ganzen Plan zeigen ( 0 )">⤢ Ganz</button><button class="pv-b" data-act="pvKeys" title="Tastenkürzel ( ? )">?</button></div>`
-    : `<div class="pv-ui pv-fab"><button class="pv-round" data-act="pvNorth" aria-label="Drehung auf 0°"><span class="pv-compass" id="pvC">⬆</span></button><button class="pv-round" data-act="pvFit" aria-label="Ganzen Plan zeigen">⤢</button></div>`;
+    : `<div class="pv-ui pv-fab"><button class="pv-round place" data-act="pvPlace" aria-label="Türen platzieren">📍</button><button class="pv-round" data-act="pvNorth" aria-label="Drehung auf 0°"><span class="pv-compass" id="pvC">⬆</span></button><button class="pv-round" data-act="pvFit" aria-label="Ganzen Plan zeigen">⤢</button></div>`;
+  const vis = planCtx.vid && await db.get('visits', planCtx.vid);
   $app.innerHTML = `<div class="pv ${fine ? 'fine' : 'touch'}">
     <header class="pv-ui pv-top">
-      <button class="pv-b" data-act="menuGo" data-href="#/o/${sid}" aria-label="Zurück" title="Zurück ( Esc )">‹</button>
-      <div class="pv-title"><b>${esc(f.name)}</b><span>${esc(sname(st))}</span></div>
+      <button class="pv-b" data-act="menuGo" data-href="${esc(planBack || `#/o/${sid}`)}" aria-label="Zurück" title="Zurück ( Esc )">‹</button>
+      <div class="pv-title"><b>${esc(f.name)}</b><span>${esc(sname(st))}${vis ? ` · Termin ${esc(vis.datum || '')}` : ''}</span></div>
       ${ph ? `<button class="pv-b" data-act="planMenu" data-site="${sid}" data-id="${f.id}" aria-label="Plan ändern" title="Plan ersetzen oder entfernen">⋯</button>` : ''}
     </header>
     <nav class="pv-ui pv-tabs">${tabs}</nav>
-    ${ph ? `<div class="pv-stage" id="pvStage"><div class="pv-world"><img id="pvImg" src="${planUrl}" width="${f.map.w}" height="${f.map.h}" alt="Plan ${esc(f.name)}" draggable="false"></div></div>
+    ${ph ? `<div class="pv-stage" id="pvStage"><div class="pv-world"><img id="pvImg" src="${planUrl}" width="${f.map.w}" height="${f.map.h}" alt="Plan ${esc(f.name)}" draggable="false"></div><div class="pv-pins" id="pvPins"></div></div>
       ${ctrls}
-      <p class="pv-ui pv-hint" id="pvHint">${fine ? 'Ziehen: verschieben · Mausrad: zoomen · Umschalt + Rad oder rechte Maustaste ziehen: drehen' : 'Ein Finger: verschieben<br>Zwei Finger: zoomen und drehen<br>Doppeltippen: näher'}</p>`
+      <p class="pv-ui pv-placehint hidden" id="pvPlaceHint"></p>
+      <p class="pv-ui pv-hint" id="pvHint">${fine ? 'Klicken: Tür oder Tor setzen · Ziehen: verschieben · Mausrad: zoomen · Umschalt + Rad oder rechte Maustaste: drehen' : 'Ein Finger: verschieben<br>Zwei Finger: zoomen und drehen<br>📍 tippen, um Türen zu setzen'}</p>`
     : `<div class="pv-empty"><p>Für <b>${esc(f.name)}</b> gibt es noch keinen Plan.</p><p class="muted small">Ein Foto oder Bild des Grundrisses wählen. Es bleibt nur auf diesem Gerät gespeichert und wird mit Terminen mitgeschickt.</p>
       <div class="pv-src">${FINE.matches ? planUpBtn(sid, f.id, '🖼 Bild für den Plan wählen', 'big-btn primary') : planSources(sid, f.id)}</div></div>`}
   </div>`;
@@ -2660,14 +2667,235 @@ async function renderPlan(sid, fid) {
   planCtl = mountPlan(stage, document.getElementById('pvImg'), {
     w: f.map.w, h: f.map.h, rot: +settings.get('planRot:' + f.id, 0) || 0,
     onRot: (r) => settings.set('planRot:' + f.id, Math.round(r * 10) / 10),
+    onTap: (x, y, t) => planTap(x, y, t),
+    tapMode: () => !!(PS && (PS.place || PS.armed || PS.find)),
     onChange: (v, fitS) => {
+      layoutPins();
       if (zEl) zEl.textContent = `${Math.round(v.s / fitS * 100)} %`;
       if (rEl) rEl.textContent = `${Math.round(v.r)}°`;
       if (cEl) { cEl.style.transform = `rotate(${v.r}deg)`; cEl.parentElement.classList.toggle('off', Math.abs(v.r) < 0.5); }
     },
   });
   setTimeout(() => document.getElementById('pvHint')?.classList.add('gone'), 4000);
+  PS = { sid, fid: f.id, site: st, w: f.map.w, h: f.map.h, place: false, armed: null, sel: null };
+  await planLoad(sid);
+  pinPointers(document.getElementById('pvPins'));
+  drawPins();
+  if (planCtx.gid) {
+    const g = PS.gates.find(x => x.id === planCtx.gid);
+    if (g?.pos?.etageId === f.id) { setTimeout(() => { planCtl?.focus(g.pos.x, g.pos.y, 2.5); openCard(g.id); }, 120); }
+    else if (g) { PS.armed = g.id; setPlaceHint(); }
+  }
 }
+
+// ---------- Türen und Tore auf dem Plan ----------
+// gate.pos = { etageId, x, y } in Bildpixeln. Markierungen liegen über dem Bild und bleiben beim Zoomen und Drehen
+// aufrecht und gleich groß. Türen sind rund, Tore eckig; die Farbe zeigt den Stand der Prüfung.
+let planCtx = {}, planBack = '', PS = null;
+const planSuffix = () => planCtx.vid ? `/t/${planCtx.vid}` : planCtx.gid ? `/g/${planCtx.gid}` : '';
+async function planLoad(sid) {
+  const [gates, its] = await Promise.all([db.all('gates'), db.all('inspections')]);
+  PS.gates = gates.filter(g => g.siteId === sid);
+  PS.inV = new Map();
+  if (planCtx.vid) { const v = await db.get('visits', planCtx.vid); if (v) for (const i of await visitItems(v)) if (i.gateId) PS.inV.set(i.gateId, i); }
+  const by = new Map(); its.filter(i => i.gateId && i.siteId === sid).forEach(i => { if (!by.has(i.gateId)) by.set(i.gateId, []); by.get(i.gateId).push(i); });
+  PS.protos = by;
+}
+function pinStatus(g) {
+  const it = PS.inV.get(g.id); if (it) return itemState(it)[0];
+  const ps = PS.protos.get(g.id) || [];
+  if (ps.some(i => !i.paper && i.status !== 'done')) return 'arbeit';
+  const d = ps.filter(i => i.status === 'done').sort(protoSort)[0];
+  return !d ? 'nie' : hasDefects(d) ? 'maengel' : 'fertig';
+}
+const PIN_ST = { offen: 'offen', arbeit: 'in Arbeit', fertig: 'ohne Mängel', maengel: 'mit Mängeln', nie: 'noch nie geprüft' };
+function drawPins() {
+  const box = document.getElementById('pvPins'); if (!box || !PS) return;
+  const hl = planCtx.vid;
+  box.innerHTML = PS.gates.filter(g => g.pos?.etageId === PS.fid).map(g => {
+    const u = gateUnit(g);
+    return `<button type="button" class="pv-pin k-${gateKind(g)} st-${pinStatus(g)} ${hl ? (PS.inV.has(g.id) ? 'hl' : 'dim') : ''} ${PS.sel === g.id ? 'sel' : ''}" data-gid="${g.id}" title="${esc(`${u.noun} ${u.nr || ''} ${u.standort || ''}`.trim())}"><span>${esc(u.nr || '?')}</span></button>`;
+  }).join('') + (PS.temp ? '<span class="pv-pin temp"><span>＋</span></span>' : '');
+  layoutPins();
+}
+function layoutPins() {
+  if (!PS || !planCtl) return;
+  document.querySelectorAll('#pvPins .pv-pin').forEach(el => {
+    const g = el.dataset.gid ? PS.gates.find(x => x.id === el.dataset.gid) : null, p = g ? g.pos : PS.temp;
+    if (!p) return;
+    const [x, y] = planCtl.toScreen(p.x, p.y);
+    el.style.transform = `translate(${x}px, ${y}px) translate(-50%, calc(-100% - 7px))`;
+  });
+  if (PS.find && PS.temp) { const [x, y] = planCtl.toScreen(PS.temp.x, PS.temp.y); posFind(x, y); }
+}
+function posFind(x, y) {
+  const el = document.getElementById('pvFind'); if (!el || !FINE.matches) return;
+  const st = document.getElementById('pvStage').getBoundingClientRect();
+  el.style.left = `${Math.max(8, Math.min(st.width - el.offsetWidth - 8, x + 18))}px`;
+  el.style.top = `${Math.max(8, Math.min(st.height - el.offsetHeight - 8, y - 20))}px`;
+}
+async function savePos(g, pos) {
+  const st = await db.get('sites', g.siteId);
+  if (pos && g.etageId !== pos.etageId) {
+    const from = floorName(st, g.etageId);
+    if (from) logDoor(g, [{ field: 'Etage', from, to: floorName(st, pos.etageId) }], 'auf dem Plan gesetzt');
+    g.etageId = pos.etageId;
+  }
+  if (pos) g.pos = pos; else delete g.pos;
+  await saveGate(g);
+}
+// Tippen / Klicken auf eine leere Stelle des Plans
+function planTap(sx, sy, ptype) {
+  if (!PS) return;
+  if (PS.find) return closeFind();
+  if (PS.sel) { PS.sel = null; closeCard(); drawPins(); if (!PS.armed) return; }
+  const touchPlace = ptype !== 'mouse' && !PS.place && !PS.armed;
+  if (touchPlace) return;
+  const [x, y] = planCtl.toImage(sx, sy);
+  if (x < 0 || y < 0 || x > PS.w || y > PS.h) return;
+  if (PS.armed) {
+    const g = PS.gates.find(q => q.id === PS.armed); PS.armed = null; setPlaceHint();
+    if (g) return savePos(g, { etageId: PS.fid, x, y }).then(() => { drawPins(); buzz(); openCard(g.id); });
+  }
+  PS.temp = { x, y }; drawPins(); openFind(sx, sy);
+}
+function setPlaceHint() {
+  const h = document.getElementById('pvPlaceHint'); if (!h) return;
+  const g = PS.armed && PS.gates.find(q => q.id === PS.armed);
+  h.textContent = g ? `${FINE.matches ? 'Klicken' : 'Tippen'}, wo ${gateUnit(g).noun} ${gateUnit(g).nr || ''} ist` : PS.place ? 'Auf den Plan tippen, wo eine Tür oder ein Tor ist' : '';
+  h.classList.toggle('hidden', !h.textContent);
+  document.querySelector('[data-act=pvPlace]')?.classList.toggle('on', !!PS.place);
+}
+// Suchfeld zum Zuordnen: Tür-Nr. / Tor-Nr. eintippen, vorhandene wählen oder neu anlegen
+function openFind(sx, sy) {
+  PS.find = true; PS.fq = '';
+  const stage = document.getElementById('pvStage');
+  stage.insertAdjacentHTML('beforeend', `<div class="pv-ui pv-find ${FINE.matches ? 'fine' : 'touch'}" id="pvFind">
+    <div class="pv-find-h"><input class="field" id="pvFindIn" placeholder="Tür-Nr. / Tor-Nr. suchen oder neu" autocomplete="off" enterkeyhint="go"><button class="pv-find-x" data-act="pvFindX" aria-label="Abbrechen">✕</button></div>
+    <div class="pv-find-list" id="pvFindList"></div></div>`);
+  drawFind();
+  posFind(sx, sy);
+  setTimeout(() => document.getElementById('pvFindIn')?.focus(), 30);
+}
+function closeFind() { PS.find = false; PS.temp = null; PS.fIdx = 0; document.getElementById('pvFind')?.remove(); drawPins(); }
+function findHits(q) {
+  const nq = normNr(q), t = normTxt(q);
+  const st = PS.site, sc = (g) => {
+    const u = gateUnit(g), n = normNr(u.nr);
+    if (!q) return g.pos ? 0 : (g.etageId === PS.fid ? 3 : !g.etageId ? 2 : 1);
+    if (n && nq) { if (n === nq) return 10; if (n.startsWith(nq)) return 6; if (n.includes(nq)) return 4; }
+    return normTxt(u.standort).includes(t) ? 2 : 0;
+  };
+  return PS.gates.map(g => [g, sc(g)]).filter(([, s]) => s > 0).sort((a, b) => b[1] - a[1] || byNr(a[0], b[0])).slice(0, 40).map(([g]) => g);
+}
+function drawFind() {
+  const box = document.getElementById('pvFindList'); if (!box) return;
+  const q = PS.fq.trim(), hits = findHits(q), exact = hits.some(g => normNr(gateUnit(g).nr) === normNr(q));
+  PS.fItems = [...hits.map(g => ({ g })), ...(q && !exact ? [{ make: 'tuer' }, { make: 'tor' }] : [])];
+  PS.fIdx = Math.min(PS.fIdx || 0, Math.max(0, PS.fItems.length - 1));
+  box.innerHTML = PS.fItems.map((it, i) => {
+    if (it.make) return `<button class="pv-find-row new ${i === PS.fIdx ? 'on' : ''}" data-act="pvFindPick" data-i="${i}">＋ ${it.make === 'tuer' ? 'Neue Tür' : 'Neues Tor'} „${esc(q)}“ anlegen</button>`;
+    const g = it.g, u = gateUnit(g), where = g.pos ? `liegt auf ${floorName(PS.site, g.pos.etageId) || 'Plan'}` : g.etageId ? floorName(PS.site, g.etageId) : '';
+    return `<button class="pv-find-row ${i === PS.fIdx ? 'on' : ''}" data-act="pvFindPick" data-i="${i}"><span class="kind-tag ${gateKind(g)}">${esc(u.noun)}</span> <b>${esc(u.nr || '–')}</b> <span class="muted">${esc(u.standort || '')}</span>${where ? ` <span class="muted small">· ${esc(where)}</span>` : ''}</button>`;
+  }).join('') || `<p class="muted small pv-find-empty">${q ? '' : 'Alle Türen und Tore an diesem Objekt liegen schon auf einem Plan. Nummer eintippen, um eine neue anzulegen.'}</p>`;
+  box.querySelector('.on')?.scrollIntoView({ block: 'nearest' });
+}
+async function findPick(i) {
+  const it = PS.fItems?.[i]; if (!it || !PS.temp) return;
+  const pos = { etageId: PS.fid, x: PS.temp.x, y: PS.temp.y };
+  let g = it.g;
+  if (it.make) {
+    const t = BY_KIND[it.make], q = PS.fq.trim();
+    let cid = null;
+    if (planCtx.vid) { const v = ensurePairs(await db.get('visits', planCtx.vid)); cid = v?.pairs.find(p => p.siteId === PS.sid)?.customerId || null; }
+    if (!cid) { const ks = kundenAt(PS.site, PS.gates); cid = PS.site.customerId || ks[0] || null; }
+    g = { id: uid(), siteId: PS.sid, customerId: cid, templateId: t.id, data: { [t.unit.group]: { [t.unit.nr]: q } }, etageId: PS.fid };
+    PS.gates.push(g);
+  }
+  await savePos(g, pos);
+  PS.find = false; PS.temp = null; document.getElementById('pvFind')?.remove();
+  buzz(); drawPins(); openCard(g.id);
+  if (it.make) snack(`${it.make === 'tuer' ? 'Tür' : 'Tor'} ${PS.fq.trim()} angelegt. Die übrigen Angaben später auf der Seite der ${it.make === 'tuer' ? 'Tür' : 'des Tors'} eintragen.`);
+}
+// Karte zu einer Markierung
+function openCard(gid) {
+  closeCard();
+  const g = PS.gates.find(x => x.id === gid); if (!g) return;
+  PS.sel = gid; drawPins();
+  const u = gateUnit(g), s = pinStatus(g), it = PS.inV.get(gid);
+  const open = !it && (PS.protos.get(gid) || []).find(i => !i.paper && i.status !== 'done');
+  document.getElementById('pvStage').insertAdjacentHTML('beforeend', `<div class="pv-ui pv-card" id="pvCard">
+    <div class="pv-card-h"><span class="kind-tag ${gateKind(g)}">${esc(u.noun)}</span> <b>${esc(u.nr || 'ohne Nr.')}</b> <span class="pv-st st-${s}">${esc(PIN_ST[s])}</span>
+      <button class="pv-find-x" data-act="pvCardX" aria-label="Schließen">✕</button></div>
+    <div class="muted small">${esc([u.standort || 'ohne Standort', u.typ].filter(Boolean).join(' · '))}${planCtx.vid ? (it ? ' · in diesem Termin' : ' · nicht in diesem Termin') : ''}</div>
+    <div class="pv-card-acts">
+      ${it ? `<button class="pv-cb primary" data-act="pvOpenItem" data-id="${it.id}">▶ Prüfen</button>` : ''}
+      ${open ? `<button class="pv-cb primary" data-act="pvOpenItem" data-id="${open.id}">▶ Offene Prüfung</button>` : ''}
+      ${planCtx.vid && !it ? `<button class="pv-cb primary" data-act="pvAddToVisit" data-id="${gid}">＋ Zum Termin</button>` : ''}
+      <button class="pv-cb" data-act="menuGo" data-href="#/d/${gid}">🚪 ${esc(u.noun)} öffnen</button>
+      ${FINE.matches ? '' : `<button class="pv-cb" data-act="pvMove" data-id="${gid}">↔ Verschieben</button>`}
+      <button class="pv-cb" data-act="pvUnpin" data-id="${gid}" title="Vom Plan nehmen ( Entf )">✕ Vom Plan</button>
+    </div></div>`);
+}
+function closeCard() { document.getElementById('pvCard')?.remove(); if (PS) PS.sel = null; }
+// Markierung ziehen: Maus sofort, Finger nach langem Drücken
+function pinPointers(box) {
+  let d = null;
+  box.addEventListener('pointerdown', (e) => {
+    const el = e.target.closest('.pv-pin[data-gid]'); if (!el) return;
+    e.stopPropagation(); el.setPointerCapture(e.pointerId);
+    d = { el, gid: el.dataset.gid, x: e.clientX, y: e.clientY, drag: false, mouse: e.pointerType === 'mouse' };
+    // Abstand Zeiger ↔ Spitze merken, damit die Markierung beim Ziehen nicht springt
+    const g0 = PS.gates.find(q => q.id === d.gid), st0 = document.getElementById('pvStage').getBoundingClientRect();
+    if (g0?.pos) { const [tx, ty] = planCtl.toScreen(g0.pos.x, g0.pos.y); d.ox = e.clientX - st0.left - tx; d.oy = e.clientY - st0.top - ty; }
+    if (!d.mouse) d.timer = setTimeout(() => { if (d) { d.drag = true; el.classList.add('drag'); buzz(); } }, 380);
+  });
+  box.addEventListener('pointermove', (e) => {
+    if (!d) return;
+    const dist = Math.hypot(e.clientX - d.x, e.clientY - d.y);
+    if (!d.drag && d.mouse && dist > 4) { d.drag = true; d.el.classList.add('drag'); }
+    if (!d.drag) { if (dist > 10) clearTimeout(d.timer); return; }
+    const st = document.getElementById('pvStage').getBoundingClientRect();
+    const [x, y] = planCtl.toImage(e.clientX - st.left - (d.ox || 0), e.clientY - st.top - (d.oy || 0));
+    const g = PS.gates.find(q => q.id === d.gid); if (!g) return;
+    g.pos = { ...g.pos, x: Math.max(0, Math.min(PS.w, x)), y: Math.max(0, Math.min(PS.h, y)) }; layoutPins();
+  });
+  const end = (e) => {
+    if (!d) return; clearTimeout(d.timer);
+    const g = PS.gates.find(q => q.id === d.gid), was = d;
+    d = null; was.el.classList.remove('drag');
+    if (was.drag && g) return savePos(g, g.pos).then(() => buzz());
+    if (e.type === 'pointerup' && Math.hypot(e.clientX - was.x, e.clientY - was.y) < 10) {
+      if (PS.find) closeFind();
+      if (PS.sel === was.gid) { closeCard(); drawPins(); } else openCard(was.gid);
+    }
+  };
+  box.addEventListener('pointerup', end); box.addEventListener('pointercancel', end);
+}
+// Vom Termin aus: Plan mit den Türen dieses Termins hervorgehoben
+async function planFromVisit() {
+  const v = ensurePairs(visit); if (!v) return;
+  const items = await visitItems(v), gates = await db.all('gates');
+  const pairs = v.filter && v.filter !== 'all' ? v.pairs.filter(p => p.id === v.filter) : v.pairs;
+  for (const p of pairs) {
+    const st = await db.get('sites', p.siteId), maps = floorsOf(st).filter(f => f.map); if (!maps.length) continue;
+    const ids = new Set(items.map(i => i.gateId));
+    const cnt = (f) => gates.filter(g => ids.has(g.id) && (g.pos?.etageId === f.id || g.etageId === f.id)).length;
+    const f = maps.slice().sort((a, b) => cnt(b) - cnt(a))[0];
+    return (location.hash = `#/plan/${st.id}/${f.id}/t/${v.id}`);
+  }
+  snack('Für dieses Objekt gibt es noch keinen Etagenplan. Auf der Seite des Objekts unter „Etagen und Pläne“ hinzufügen.');
+}
+async function visitHasPlan(v) { for (const p of pairsOf(v)) { const st = p.siteId && await db.get('sites', p.siteId); if (floorsOf(st).some(f => f.map)) return true; } return false; }
+async function planAddToVisit(gid) {
+  const v = ensurePairs(await db.get('visits', planCtx.vid)), g = PS.gates.find(x => x.id === gid); if (!v || !g) return;
+  const p = v.pairs.find(x => x.siteId === g.siteId && x.customerId === g.customerId) || v.pairs.find(x => x.siteId === g.siteId) || v.pairs[0];
+  visit = v;
+  try { await addGateToVisit(g.id, gateKind(g), p); } finally { visit = null; }
+  await planLoad(PS.sid); drawPins(); openCard(gid);
+  snack(`${gateUnit(g).noun} ${gateUnit(g).nr || ''} ist jetzt im Termin.`);
+}
+
 async function planUpload(input) {
   const [sid, fid] = input.dataset.planup.split(':'), file = input.files?.[0];
   input.value = '';
@@ -2719,12 +2947,23 @@ function planKeys() {
 }
 window.addEventListener('keydown', (e) => {
   if (!planCur || e.ctrlKey || e.metaKey || e.altKey) return;
-  const t = e.target; if (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA') return;
+  const t = e.target;
+  if (t.id === 'pvFindIn' && PS) {
+    const n = PS.fItems?.length || 0;
+    if (e.key === 'ArrowDown' || e.key === 'ArrowUp') { e.preventDefault(); PS.fIdx = (PS.fIdx + (e.key === 'ArrowDown' ? 1 : -1) + n) % Math.max(n, 1); return drawFind(); }
+    if (e.key === 'Enter') { e.preventDefault(); return findPick(PS.fIdx || 0); }
+    if (e.key === 'Escape') { e.preventDefault(); e.stopImmediatePropagation(); return closeFind(); }
+    return;
+  }
+  if (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA') return;
   if (document.getElementById('sheet').classList.contains('show')) return;
   const k = e.key, c = planCtl, step = e.shiftKey ? 1 : 15;
-  const floor = async (d) => { const st = await db.get('sites', planCur.sid), fl = floorsOf(st), i = fl.findIndex(f => f.id === planCur.fid), n = fl[i + d]; if (n) location.replace(`#/plan/${planCur.sid}/${n.id}`); };
+  const floor = async (d) => { const st = await db.get('sites', planCur.sid), fl = floorsOf(st), i = fl.findIndex(f => f.id === planCur.fid), n = fl[i + d]; if (n) location.replace(`#/plan/${planCur.sid}/${n.id}${planSuffix()}`); };
   const act = {
-    Escape: () => (location.hash = `#/o/${planCur.sid}`), PageUp: () => floor(1), PageDown: () => floor(-1), '?': planKeys,
+    Escape: () => { if (PS?.find) return closeFind(); if (PS?.sel) { closeCard(); return drawPins(); } if (PS?.armed || PS?.place) { PS.armed = null; PS.place = false; return setPlaceHint(); } location.hash = planBack || `#/o/${planCur.sid}`; },
+    Delete: () => PS?.sel && document.querySelector(`[data-act=pvUnpin][data-id="${PS.sel}"]`)?.click(),
+    Backspace: () => PS?.sel && document.querySelector(`[data-act=pvUnpin][data-id="${PS.sel}"]`)?.click(),
+    PageUp: () => floor(1), PageDown: () => floor(-1), '?': planKeys,
     ...(c ? { '+': c.zoomIn, '=': c.zoomIn, '-': c.zoomOut, '_': c.zoomOut, q: () => c.rotate(-step), Q: () => c.rotate(-step), e: () => c.rotate(step), E: () => c.rotate(step),
       r: () => c.setRot(0), R: () => c.setRot(0), 0: c.fit, f: c.fit, F: c.fit,
       ArrowLeft: () => c.pan(80, 0), ArrowRight: () => c.pan(-80, 0), ArrowUp: () => c.pan(0, 80), ArrowDown: () => c.pan(0, -80) } : {}),
@@ -2838,7 +3077,17 @@ document.addEventListener('click', async (e) => {
       const box = b.closest('.chips'); box.insertAdjacentHTML('afterend', `<div class="fl-row"><input class="field sm fl-new" placeholder="Name der Etage" autocomplete="off"><button class="mini-x" data-act="flAddAsk" data-site="${b.dataset.site}">＋</button></div>`); box.nextElementSibling.querySelector('input').focus(); return; }
     case 'flMove': return flUpdate(b.dataset.site, (st) => { const fl = floorsOf(st); const i = fl.findIndex(f => f.id === b.dataset.id), j = i + (+b.dataset.d); if (j < 0 || j >= fl.length) return; [fl[i], fl[j]] = [fl[j], fl[i]]; fl.forEach((f, k) => { f.order = k; }); st.etagen = fl; });
     case 'flDel': return flUpdate(b.dataset.site, (st) => { const f = floorsOf(st).find(x => x.id === b.dataset.id); if (f?.map?.photoId) db.del('photos', f.map.photoId); st.etagen = floorsOf(st).filter(x => x.id !== b.dataset.id); });
-    case 'planGo': closeJump(); return location.hash.startsWith('#/plan/') ? location.replace(`#/plan/${b.dataset.site}/${b.dataset.id}`) : (location.hash = `#/plan/${b.dataset.site}/${b.dataset.id}`);
+    case 'planGo': closeJump(); return location.hash.startsWith('#/plan/') ? location.replace(`#/plan/${b.dataset.site}/${b.dataset.id}${planSuffix()}`) : (location.hash = `#/plan/${b.dataset.site}/${b.dataset.id}`);
+    case 'pvPlace': if (!PS) return; PS.place = !PS.place; PS.armed = null; if (!PS.place && PS.find) closeFind(); return setPlaceHint();
+    case 'pvFindX': return closeFind();
+    case 'pvFindPick': return findPick(+b.dataset.i);
+    case 'pvCardX': closeCard(); return drawPins();
+    case 'pvOpenItem': { const i = await db.get('inspections', b.dataset.id); return i && openItem(i); }
+    case 'pvAddToVisit': return planAddToVisit(b.dataset.id);
+    case 'pvMove': PS.armed = b.dataset.id; closeCard(); drawPins(); return setPlaceHint();
+    case 'pvUnpin': { const g = PS?.gates.find(x => x.id === b.dataset.id); if (!g) return; await savePos(g, null); closeCard(); drawPins(); return snack(`${gateUnit(g).noun} ${gateUnit(g).nr || ''} vom Plan genommen.`); }
+    case 'planOpenVisit': return planFromVisit();
+    case 'planFor': { const g = await db.get('gates', b.dataset.id); const st = g && await db.get('sites', g.siteId); const fl = floorsOf(st); const f = fl.find(x => x.id === g?.pos?.etageId) || fl.find(x => x.id === g?.etageId && x.map) || fl.find(x => x.map); if (!f) return; return (location.hash = `#/plan/${g.siteId}/${f.id}/g/${g.id}`); }
     case 'planMenu': return planMenu(b.dataset.site, b.dataset.id);
     case 'planAdd': return planAdd(b.dataset.site, b.dataset.id);
     case 'planDelAsk': return planMenu(b.dataset.site, b.dataset.id, true);
@@ -3050,6 +3299,7 @@ document.addEventListener('input', (e) => {
   if (t.id === 'kSearch') { kQuery = t.value; return rerenderKeepFocus(t.id, renderKunden); }
   if (t.id === 'oSearch') { oQuery = t.value; return rerenderKeepFocus(t.id, renderObjekte); }
   if (t.id === 'kpSearch') return drawKp(t.value);
+  if (t.id === 'pvFindIn' && PS) { PS.fq = t.value; PS.fIdx = 0; return drawFind(); }
   if (t.dataset.inote) return saveINote(t.dataset.inote, t.value);
   if (t.dataset.flname) { const [sid, fid] = t.dataset.flname.split(':'), val = t.value; flChain = flChain.then(async () => { const st = await db.get('sites', sid); const f = st?.etagen?.find(x => x.id === fid); if (f && val.trim()) { f.name = val.trim(); await db.put('sites', st); } }); return; }
   if (t.dataset.sel) { t.checked ? selDoors.add(t.dataset.sel) : selDoors.delete(t.dataset.sel); return updSelBar(); }
@@ -3351,6 +3601,7 @@ async function renderVisitDesk() {
       <button class="tb-btn primary" data-act="addNewGate" data-kind="tor">＋ Tor</button>
       <button class="tb-btn primary" data-act="addNewGate" data-kind="tuer">＋ Tür</button>
       <span class="tb-sep"></span>
+      ${await visitHasPlan(v) ? '<button class="tb-btn" data-act="planOpenVisit">🗺 Plan</button>' : ''}
       <button class="tb-btn" data-act="sendVisit" data-id="${v.id}">📤 Senden</button>
       ${items.length ? `<button class="tb-btn" data-act="printVisit">🖨 ${items.length === 1 ? 'Drucken' : `Alle ${items.length} drucken`}</button>` : ''}
       <button class="tb-btn icon" data-act="menu" data-for="visit" data-id="${v.id}" title="Mehr">⋯</button>

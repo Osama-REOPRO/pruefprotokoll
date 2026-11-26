@@ -547,3 +547,46 @@ button.guide-link { border: 0; background: none; cursor: pointer; font: inherit;
 .sort-bar select.field { flex: 1 1 30%; min-width: 0; }
 .vg-h.lvl1 { font-size: 1.05em; margin-top: 16px; }
 .vg-h.lvl2 { font-size: .9em; color: var(--muted); margin: 10px 2px 6px 10px; text-transform: none; }
+
+/* Türen auf dem Plan */
+.pv-pins { position: absolute; inset: 0; pointer-events: none; overflow: hidden; }
+.pv-pin { position: absolute; left: 0; top: 0; display: block; pointer-events: auto; border: 0; background: none; padding: 0; cursor: pointer; touch-action: none; will-change: transform; }
+.pv-pin > span { position: relative; transform-origin: 50% 100%; min-width: 30px; height: 30px; padding: 0 7px; display: flex; align-items: center; justify-content: center;
+  font: 700 13px/1 system-ui, sans-serif; color: #fff; background: var(--pin, #64748b); border: 2px solid #fff; box-shadow: 0 2px 6px rgba(0,0,0,.45); white-space: nowrap; }
+.pv-pin > span::after { content: ''; position: absolute; left: 50%; bottom: -8px; transform: translateX(-50%); border: 6px solid transparent; border-top-color: #fff; border-bottom: 0; }
+/* Tür: rund, Tor: eckig */
+.pv-pin.k-tuer > span { border-radius: 999px; }
+.pv-pin.k-tor > span { border-radius: 3px; min-width: 34px; }
+.pv-pin.st-nie { --pin: #64748b; } .pv-pin.st-offen { --pin: #2563eb; } .pv-pin.st-arbeit { --pin: #d97706; }
+.pv-pin.st-fertig { --pin: #15803d; } .pv-pin.st-maengel { --pin: #c81e1e; }
+.pv-pin.dim { opacity: .45; } .pv-pin.dim > span { box-shadow: none; }
+.pv-pin.hl > span { outline: 3px solid #facc15; outline-offset: 1px; }
+.pv-pin.sel > span { outline: 3px solid #fff; outline-offset: 2px; transform: scale(1.15); }
+.pv-pin.drag > span { transform: scale(1.25); box-shadow: 0 8px 18px rgba(0,0,0,.5); }
+.pv-pin.temp > span { --pin: #7c3aed; animation: pinpulse 1s infinite alternate; }
+@keyframes pinpulse { to { transform: scale(1.15); } }
+.pv-find { position: absolute; z-index: 5; background: var(--card); color: var(--ink); border-radius: 12px; box-shadow: 0 10px 30px rgba(0,0,0,.45); display: flex; flex-direction: column; overflow: hidden; }
+.pv-find.fine { width: 340px; max-height: 360px; }
+.pv-find.touch { left: 8px; right: 8px; bottom: calc(env(safe-area-inset-bottom) + 8px); max-height: 55%; }
+.pv-find-h { display: flex; gap: 6px; padding: 8px; border-bottom: 1px solid var(--line); }
+.pv-find-h .field { flex: 1; min-height: 40px; }
+.pv-find-x { flex: none; width: 40px; height: 40px; border: 0; border-radius: 8px; background: var(--na-bg); color: var(--ink); font-size: 1em; cursor: pointer; }
+.pv-find-list { overflow: auto; padding: 4px; }
+.pv-find-row { display: block; width: 100%; text-align: left; border: 0; background: none; color: var(--ink); padding: 9px 10px; border-radius: 8px; font: inherit; cursor: pointer; }
+.pv-find-row.on, .pv-find-row:hover { background: var(--na-bg); }
+.pv-find-row.new { color: var(--brand); font-weight: 700; }
+.pv-find-empty { padding: 8px 10px; margin: 0; }
+.pv-card { position: absolute; z-index: 4; left: 8px; right: 8px; bottom: calc(env(safe-area-inset-bottom) + 8px); background: var(--card); color: var(--ink); border-radius: 12px; padding: 10px 12px; box-shadow: 0 10px 30px rgba(0,0,0,.45); }
+.pv.touch .pv-card { right: 84px; }
+.pv.fine .pv-card { left: 16px; right: auto; bottom: 16px; width: 360px; }
+.pv-card-h { display: flex; align-items: center; gap: 6px; margin-bottom: 4px; }
+.pv-card-h b { font-size: 1.1em; }
+.pv-card-h .pv-find-x { margin-left: auto; width: 34px; height: 34px; }
+.pv-st { font-size: .75em; font-weight: 700; padding: 2px 8px; border-radius: 999px; color: #fff; background: #64748b; }
+.pv-st.st-offen { background: #2563eb; } .pv-st.st-arbeit { background: #d97706; } .pv-st.st-fertig { background: #15803d; } .pv-st.st-maengel { background: #c81e1e; }
+.pv-card-acts { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px; }
+.pv-cb { border: 1px solid var(--line); background: var(--card); color: var(--ink); border-radius: 8px; padding: 8px 10px; font: inherit; font-weight: 600; min-height: 40px; cursor: pointer; }
+.pv-cb.primary { background: var(--brand); color: #fff; border-color: var(--brand); }
+.pv-round.place.on { background: #7c3aed; }
+.pv-placehint { position: absolute; left: 50%; top: calc(env(safe-area-inset-top) + 124px); transform: translateX(-50%); margin: 0; padding: 8px 14px; border-radius: 10px; background: #7c3aed; color: #fff; font-weight: 600; font-size: .9em; z-index: 3; pointer-events: none; max-width: calc(100% - 24px); text-align: center; }
+.plan-open { margin-top: 10px; }

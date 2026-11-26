@@ -8,7 +8,7 @@
 const DEG = Math.PI / 180;
 const rot = (vx, vy, a) => [vx * Math.cos(a) - vy * Math.sin(a), vx * Math.sin(a) + vy * Math.cos(a)];
 
-export function mountPlan(stage, img, { w, h, rot: r0 = 0, onRot, onChange } = {}) {
+export function mountPlan(stage, img, { w, h, rot: r0 = 0, onRot, onChange, onTap, tapMode } = {}) {
   const world = stage.querySelector('.pv-world');
   let v = { x: 0, y: 0, s: 1, r: r0 }, fitS = 1, raf = 0;
   const box = () => stage.getBoundingClientRect();
@@ -55,8 +55,9 @@ export function mountPlan(stage, img, { w, h, rot: r0 = 0, onRot, onChange } = {
     const [a, b] = p;
     return { m: [(a[0] + b[0]) / 2, (a[1] + b[1]) / 2], d: Math.hypot(b[0] - a[0], b[1] - a[1]), ang: Math.atan2(b[1] - a[1], b[0] - a[0]) };
   };
+  let tapTimer = 0;
   stage.addEventListener('pointerdown', (e) => {
-    if (e.target.closest('.pv-ui')) return;
+    if (e.target.closest('.pv-ui, .pv-pin')) return;
     stage.setPointerCapture(e.pointerId);
     if (e.pointerType === 'mouse' && (e.button === 2 || e.altKey)) {
       // Rechte Maustaste (oder Alt) ziehen: um die Mitte drehen
@@ -96,15 +97,18 @@ export function mountPlan(stage, img, { w, h, rot: r0 = 0, onRot, onChange } = {
   stage.addEventListener('pointerup', (e) => {
     // Doppeltippen (Finger): hineinzoomen
     const [ux, uy] = local(e);
-    if (e.pointerType === 'touch' && pts.size === 1 && tap0 && Date.now() - tap0.t < 300 && Math.hypot(ux - tap0.p[0], uy - tap0.p[1]) < 12) {
-      const now = Date.now();
-      if (now - lastTap < 280) { const [px, py] = local(e); zoomAt(2, px, py); lastTap = 0; } else lastTap = now;
-    }
+    const isTap = pts.size === 1 && tap0 && Date.now() - tap0.t < 450 && Math.hypot(ux - tap0.p[0], uy - tap0.p[1]) < (e.pointerType === 'mouse' ? 5 : 12);
     up(e);
+    if (!isTap) return;
+    if (e.pointerType === 'mouse') { clearTimeout(tapTimer); tapTimer = setTimeout(() => onTap?.(ux, uy, e.pointerType), 230); return; }
+    // Finger: im Platzier-Modus zählt jeder Tipp, sonst zoomt Doppeltippen
+    if (tapMode?.()) return onTap?.(ux, uy, e.pointerType);
+    const now = Date.now();
+    if (now - lastTap < 280) { zoomAt(2, ux, uy); lastTap = 0; } else { lastTap = now; onTap?.(ux, uy, e.pointerType); }
   });
   stage.addEventListener('pointercancel', up);
   stage.addEventListener('contextmenu', (e) => e.preventDefault());
-  stage.addEventListener('dblclick', (e) => { if (e.target.closest('.pv-ui')) return; const [px, py] = local(e); zoomAt(e.shiftKey ? 0.5 : 2, px, py); });
+  stage.addEventListener('dblclick', (e) => { clearTimeout(tapTimer); if (e.target.closest('.pv-ui, .pv-pin')) return; const [px, py] = local(e); zoomAt(e.shiftKey ? 0.5 : 2, px, py); });
   // Mausrad / Touchpad: zoomen; mit Umschalt drehen
   stage.addEventListener('wheel', (e) => {
     if (e.target.closest('.pv-ui')) return;
@@ -136,6 +140,12 @@ export function mountPlan(stage, img, { w, h, rot: r0 = 0, onRot, onChange } = {
     zoomIn: () => zoomAt(1.4, ...center()), zoomOut: () => zoomAt(1 / 1.4, ...center()),
     rotate: (d) => { const [cx, cy] = center(); rotateAt(d, cx, cy); }, setRot, fit: () => fit(true),
     pan, get view() { return { ...v }; }, get fitScale() { return fitS; },
+    // Bildpunkt <-> Punkt auf der Bühne (für Markierungen, die aufrecht und gleich groß bleiben)
+    toScreen: (px, py) => { const [dx, dy] = rot(px * v.s, py * v.s, v.r * DEG); return [v.x + dx, v.y + dy]; },
+    toImage: (sx, sy) => { const [dx, dy] = rot(sx - v.x, sy - v.y, -v.r * DEG); return [dx / v.s, dy / v.s]; },
+    // Einen Bildpunkt in die Mitte holen (z. B. eine Tür zeigen)
+    focus: (px, py, k = 3) => { const b = box(); v.s = clampS(Math.max(v.s, fitS * k)); const [dx, dy] = rot(px * v.s, py * v.s, v.r * DEG); v.x = b.width / 2 - dx; v.y = b.height / 2 - dy; apply(); },
+    refresh: apply,
     destroy: () => ro.disconnect(),
   };
 }
