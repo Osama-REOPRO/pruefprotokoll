@@ -8,7 +8,7 @@
 const DEG = Math.PI / 180;
 const rot = (vx, vy, a) => [vx * Math.cos(a) - vy * Math.sin(a), vx * Math.sin(a) + vy * Math.cos(a)];
 
-export function mountPlan(stage, img, { w, h, rot: r0 = 0, onRot, onChange, onTap, onDbl, tapMode } = {}) {
+export function mountPlan(stage, img, { w, h, rot: r0 = 0, pad = 12, onRot, onChange, onTap, onDbl, tapMode } = {}) {
   const world = stage.querySelector('.pv-world');
   let v = { x: 0, y: 0, s: 1, r: r0 }, fitS = 1, raf = 0;
   const box = () => stage.getBoundingClientRect();
@@ -37,7 +37,9 @@ export function mountPlan(stage, img, { w, h, rot: r0 = 0, onRot, onChange, onTa
   const fit = (keepRot = true) => {
     const b = box(), a = (keepRot ? v.r : 0) * DEG;
     const bw = Math.abs(w * Math.cos(a)) + Math.abs(h * Math.sin(a)), bh = Math.abs(w * Math.sin(a)) + Math.abs(h * Math.cos(a));
-    fitS = Math.min((b.width - 24) / bw, (b.height - 24) / bh);
+    // pad: Rand rund um das Bild (dort stehen die Namen der Türen)
+    const pd = Math.min(pad, b.width * 0.18, b.height * 0.18);
+    fitS = Math.min((b.width - 2 * pd) / bw, (b.height - 2 * pd) / bh);
     v.s = fitS; v.r = keepRot ? v.r : 0;
     const [qx, qy] = rot(w / 2 * v.s, h / 2 * v.s, v.r * DEG);
     v.x = b.width / 2 - qx; v.y = b.height / 2 - qy; apply();
@@ -57,7 +59,7 @@ export function mountPlan(stage, img, { w, h, rot: r0 = 0, onRot, onChange, onTa
   };
   let tapTimer = 0;
   stage.addEventListener('pointerdown', (e) => {
-    if (e.target.closest('.pv-ui, .pv-pin')) return;
+    if (e.target.closest('.pv-ui, .pv-pin, .pv-lbl')) return;
     stage.setPointerCapture(e.pointerId);
     if (e.pointerType === 'mouse' && (e.button === 2 || e.altKey)) {
       // Rechte Maustaste (oder Alt) ziehen: um die Mitte drehen
@@ -108,7 +110,7 @@ export function mountPlan(stage, img, { w, h, rot: r0 = 0, onRot, onChange, onTa
   });
   stage.addEventListener('pointercancel', up);
   stage.addEventListener('contextmenu', (e) => e.preventDefault());
-  stage.addEventListener('dblclick', (e) => { clearTimeout(tapTimer); if (e.target.closest('.pv-ui, .pv-pin')) return; const [px, py] = local(e); if (onDbl && !e.shiftKey) return onDbl(px, py); zoomAt(e.shiftKey ? 0.5 : 2, px, py); });
+  stage.addEventListener('dblclick', (e) => { clearTimeout(tapTimer); if (e.target.closest('.pv-ui, .pv-pin, .pv-lbl')) return; const [px, py] = local(e); if (onDbl && !e.shiftKey) return onDbl(px, py); zoomAt(e.shiftKey ? 0.5 : 2, px, py); });
   // Doppelklick: mit onDbl (Etagenplan: Tür setzen) dorthin, sonst näher; Umschalt + Doppelklick: weiter weg
   // Mausrad / Touchpad: zoomen; mit Umschalt drehen
   stage.addEventListener('wheel', (e) => {

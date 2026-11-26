@@ -550,21 +550,27 @@ button.guide-link { border: 0; background: none; cursor: pointer; font: inherit;
 
 /* Türen auf dem Plan */
 .pv-pins { position: absolute; inset: 0; pointer-events: none; overflow: hidden; }
-.pv-pin { position: absolute; left: 0; top: 0; display: block; pointer-events: auto; border: 0; background: none; padding: 0; cursor: pointer; touch-action: none; will-change: transform; }
-.pv-pin > span { position: relative; transform-origin: 50% 100%; min-width: 30px; height: 30px; padding: 0 7px; display: flex; align-items: center; justify-content: center;
-  font: 700 13px/1 system-ui, sans-serif; color: #fff; background: var(--pin, #64748b); border: 2px solid #fff; box-shadow: 0 2px 6px rgba(0,0,0,.45); white-space: nowrap; }
-.pv-pin > span::after { content: ''; position: absolute; left: 50%; bottom: -8px; transform: translateX(-50%); border: 6px solid transparent; border-top-color: #fff; border-bottom: 0; }
-/* Tür: rund, Tor: eckig */
-.pv-pin.k-tuer > span { border-radius: 999px; }
-.pv-pin.k-tor > span { border-radius: 3px; min-width: 34px; }
-.pv-pin.st-nie { --pin: #64748b; } .pv-pin.st-offen { --pin: #2563eb; } .pv-pin.st-arbeit { --pin: #d97706; }
-.pv-pin.st-fertig { --pin: #15803d; } .pv-pin.st-maengel { --pin: #c81e1e; }
-.pv-pin.dim { opacity: .45; } .pv-pin.dim > span { box-shadow: none; }
-.pv-pin.hl > span { outline: 3px solid #facc15; outline-offset: 1px; }
-.pv-pin.sel > span { outline: 3px solid #fff; outline-offset: 2px; transform: scale(1.15); }
-.pv-pin.drag > span { transform: scale(1.25); box-shadow: 0 8px 18px rgba(0,0,0,.5); }
-.pv-pin.temp > span { --pin: #7c3aed; animation: pinpulse 1s infinite alternate; }
-@keyframes pinpulse { to { transform: scale(1.15); } }
+.pv-lines { position: absolute; inset: 0; width: 100%; height: 100%; overflow: visible; }
+.pv-lines line { --pin: #64748b; stroke: var(--pin); stroke-width: 2; filter: drop-shadow(0 0 1.5px #fff); }
+.pv-pin, .pv-lbl { --pin: #64748b; }
+.pv-pins .st-nie { --pin: #64748b; } .pv-pins .st-offen { --pin: #2563eb; } .pv-pins .st-arbeit { --pin: #d97706; } .pv-pins .st-fertig { --pin: #15803d; } .pv-pins .st-maengel { --pin: #c81e1e; }
+/* Punkt am Ort: Tür rund, Tor eckig */
+.pv-pin { position: absolute; left: 0; top: 0; width: 14px; height: 14px; padding: 0; border: 2px solid #fff; background: var(--pin); box-shadow: 0 0 0 1px rgba(0,0,0,.5), 0 1px 4px rgba(0,0,0,.4); pointer-events: auto; cursor: pointer; touch-action: none; will-change: transform; }
+.pv-pin::before { content: ''; position: absolute; inset: -10px; } /* größere Trefferfläche */
+.pv-pin.k-tuer { border-radius: 50%; } .pv-pin.k-tor { border-radius: 2px; }
+.pv-pin.temp { --pin: #7c3aed; border-radius: 50%; width: 18px; height: 18px; animation: pinpulse 1s infinite alternate; }
+@keyframes pinpulse { to { box-shadow: 0 0 0 6px rgba(124,58,237,.35); } }
+/* Name am Rand */
+.pv-lbl { position: absolute; left: 0; top: 0; height: 24px; min-width: 32px; padding: 0 7px; display: flex; align-items: center; justify-content: center; pointer-events: auto; cursor: pointer; touch-action: none; will-change: transform;
+  font: 700 12px/1 system-ui, sans-serif; color: #fff; background: var(--pin); border: 2px solid #fff; box-shadow: 0 1px 4px rgba(0,0,0,.45); white-space: nowrap; }
+.pv-lbl.k-tuer { border-radius: 999px; } .pv-lbl.k-tor { border-radius: 3px; }
+.pv-pin.dim, .pv-lbl.dim { opacity: .45; } .pv-lines line.dim { opacity: .35; }
+.pv-lbl.hl, .pv-pin.hl { outline: 3px solid #facc15; outline-offset: 1px; }
+.pv-lines line.hl { stroke-width: 2.5; }
+.pv-lbl.sel { outline: 3px solid #fff; outline-offset: 2px; transform-origin: center; }
+.pv-pin.sel { outline: 3px solid #fff; outline-offset: 2px; width: 18px; height: 18px; }
+.pv-lines line.sel { stroke-width: 3.5; }
+.pv-pin.drag { width: 20px; height: 20px; box-shadow: 0 6px 14px rgba(0,0,0,.5); }
 .pv-find { position: absolute; z-index: 5; background: var(--card); color: var(--ink); border-radius: 12px; box-shadow: 0 10px 30px rgba(0,0,0,.45); display: flex; flex-direction: column; overflow: hidden; }
 .pv-find.fine { width: 340px; max-height: 360px; }
 .pv-find.touch { left: 8px; right: 8px; bottom: calc(env(safe-area-inset-bottom) + 8px); max-height: 55%; }
@@ -631,3 +637,22 @@ button.guide-link { border: 0; background: none; cursor: pointer; font: inherit;
 .dn-edit { margin: 8px 12px; }
 html:not(.desk) .vw-page { padding-bottom: calc(96px + env(safe-area-inset-bottom)); }
 .vw-bottom .nav-btn { flex: 1; }
+.pv-find-row.scope { color: var(--brand); border-top: 1px solid var(--line); border-radius: 0 0 8px 8px; margin-top: 2px; }
+.plan-btn { margin-left: 6px; }
+/* Liste: noch nicht auf dem Plan */
+.pv-list { position: absolute; z-index: 3; left: 10px; top: calc(env(safe-area-inset-top) + 118px); background: rgba(20,24,30,.92); color: #fff; border-radius: 12px; box-shadow: 0 4px 18px rgba(0,0,0,.4); max-width: calc(100% - 100px); display: flex; flex-direction: column; overflow: hidden; }
+.pv-list.fine { width: 250px; max-height: calc(100% - 260px); top: 128px; }
+.pv-list:not(.fine) { top: auto; bottom: calc(env(safe-area-inset-bottom) + 18px); }
+.pv-list:not(.fine).open { left: 8px; right: 84px; max-width: none; max-height: 45%; flex-direction: column-reverse; }
+.pv:has(#pvCard, #pvFind) .pv-list:not(.fine) { display: none; }
+.pv-list-h { border: 0; background: none; color: #fff; font: inherit; font-size: .85em; font-weight: 600; text-align: left; padding: 9px 12px; cursor: pointer; display: flex; gap: 6px; align-items: center; white-space: nowrap; }
+.pv-list-h b { background: #7c3aed; border-radius: 99px; padding: 1px 8px; }
+.pv-list-h .caret { margin-left: auto; opacity: .7; }
+.pv-list-b { overflow: auto; padding: 0 4px 6px; }
+.pv-list-row { display: block; width: 100%; text-align: left; border: 0; background: none; color: #fff; font: inherit; font-size: .88em; padding: 7px 8px; border-radius: 8px; cursor: grab; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; touch-action: manipulation; }
+.pv-list-row:hover { background: rgba(255,255,255,.1); }
+.pv-list-row.on { background: #7c3aed; }
+.pv-list-row .muted { color: #cbd5e1; }
+.pv-list-sep { font-size: .72em; text-transform: uppercase; letter-spacing: .05em; color: #94a3b8; padding: 8px 8px 2px; }
+.pv-ghost { position: fixed; left: 0; top: 0; z-index: 60; pointer-events: none; margin: -12px 0 0 -16px; padding: 4px 8px; font: 700 12px/1 system-ui, sans-serif; color: #fff; background: #7c3aed; border: 2px solid #fff; border-radius: 999px; box-shadow: 0 4px 12px rgba(0,0,0,.5); }
+.pv-ghost.k-tor { border-radius: 3px; }

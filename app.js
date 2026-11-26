@@ -668,7 +668,7 @@ function renderView() {
           ${tpl.states?.includes('nv') ? `<span class="vw-t v-nv"><b>${st.nv}</b> n.v.</span>` : ''}${st.open ? `<span class="vw-t"><b>${st.open}</b> leer</span>` : ''}
         </div>
         <div class="vw-meta">${insp.status === 'done' ? '<span class="pill green">abgeschlossen</span>' : '<span class="pill">in Arbeit</span>'}${insp.paper ? ' <span class="pill paper">Papier</span>' : ''}${insp.angebot ? ' <span class="pill red">Bitte um Angebot</span>' : ''}
-          <span>${esc([insp.ort, insp.datum].filter(Boolean).join(', '))}</span>${insp.sig?.an?.name ? `<span class="muted">Prüfer: ${esc(insp.sig.an.name)}</span>` : ''}</div>
+          <span>${esc([insp.ort, insp.datum].filter(Boolean).join(', '))}</span>${planBtnInsp()}${insp.sig?.an?.name ? `<span class="muted">Prüfer: ${esc(insp.sig.an.name)}</span>` : ''}</div>
       </section>
       ${insp.remarks ? P('Bemerkungen / Festgestellte Mängel', `<p class="vw-rem">${esc(insp.remarks).replace(/\n/g, '<br>')}</p>`) : ''}
       ${insp.doorChanges?.length ? `<div class="chg-box"><b>ⓘ ${tpl.kind === 'tuer' ? 'An der Tür' : 'Am Tor'} geändert:</b> ${insp.doorChanges.map(c => `${esc(c.field)} <s>${esc(c.from)}</s> → <b>${esc(c.to)}</b>`).join(', ')}</div>` : ''}
@@ -717,7 +717,7 @@ function renderHeader() {
           ${g.id === tpl.unit.group && f.key === tpl.unit.nr && insp.nrNext && !vals[f.key] ? `<span class="chips nr-next"><button type="button" class="chip on" data-act="nrNext" data-h="${g.id}.${f.key}" data-v="${esc(insp.nrNext)}">＋ ${esc(insp.nrNext)}</button><span class="muted small nw">nach ${esc(insp.nrFrom || '')}</span></span>` : ''}
           ${f.suggest && !DESK ? `<span class="chips">${f.suggest.map(s => `<button type="button" class="chip" data-act="fill" data-h="${g.id}.${f.key}" data-v="${esc(s)}">${esc(s)}</button>`).join('')}</span>` : ''}
         </label>`).join('')}
-      ${g.id === tpl.unit.group && insp.gateId && insp.siteId ? `<label class="fld half"><span class="lbl">Etage</span>${etageSelect(ctxSite, ctxEtage, insp.gateId)}</label>` : ''}
+      ${g.id === tpl.unit.group && insp.gateId && insp.siteId ? `<label class="fld half"><span class="lbl">Etage</span>${etageSelect(ctxSite, ctxEtage, insp.gateId)}${planBtnInsp()}</label>` : ''}
       </div>
     </section>`;
   }).join('');
@@ -1482,6 +1482,7 @@ async function openMenu(forWhat, id) {
       ...(i.status === 'done' && !(viewMode && insp?.id === i.id) ? [go(`#/p/${i.id}/v`, '👁 Ansicht (nur lesen)')] : []),
       ...(forWhat === 'item' ? [go(`#/p/${i.id}/0`, '✎ Daten bearbeiten')] : [go(`#/p/${i.id}/0`, '✎ Stammdaten')]),
       ...(gate ? [go(`#/d/${gate.id}`, `🚪 Zur ${u.noun} (Daten und alle Protokolle)`)] : []),
+      ...(gate && floorsOf(await db.get('sites', gate.siteId)).some(f => f.map) ? [btn('planFor', gate.id, `📍 ${gate.pos ? 'Auf dem Plan zeigen' : 'Auf dem Plan setzen'}`)] : []),
       ...(i.status !== 'done' ? [btn('paperFor', i.id, '📄 Altes Papierprotokoll nachtragen')] : []),
       btn('duplicate', i.id, `⧉ Kopie anlegen (gleiche Häkchen)`),
       ...(i.visitId ? [btn('movePairAsk', i.id, '⇄ Kunde / Objekt ändern')] : []),
@@ -1901,7 +1902,7 @@ const changeText = (list) => list.map(c => `${c.field} ${c.from} → ${c.to}`).j
 // Tür speichern; Anzeige- und Suchtext neu berechnen, bei last: true auch „zuletzt geprüft“
 async function saveGate(g, { last = false } = {}) {
   if (last) { const lp = await latestProto(g.id); g.lastInspectionId = lp?.id || null; g.lastInspected = lp?.datum || ''; g.lastPaper = !!lp?.paper; }
-  const site = await db.get('sites', g.siteId) || {}, cust = await db.get('customers', g.customerId) || {};
+  const site = (g.siteId && await db.get('sites', g.siteId)) || {}, cust = (g.customerId && await db.get('customers', g.customerId)) || {};
   const u = gateUnit(g);
   Object.assign(g, {
     standort: u.standort || '',
@@ -2579,9 +2580,12 @@ function saveINote(key, val) {
   if (insp) ctxNotes[store] = val;
   inoteChain = inoteChain.then(async () => { const r = await db.get(store, id); if (r) { r.intNote = val; await db.put(store, r); } });
 }
+let ctxPos = false;
+// Knopf „Auf dem Plan zeigen/setzen“ für die Tür dieses Protokolls (nur wenn das Objekt einen Plan hat)
+const planBtnInsp = () => insp?.gateId && floorsOf(ctxSite).some(f => f.map) ? `<button type="button" class="mini-link plan-btn" data-act="planFor" data-id="${insp.gateId}">📍 ${ctxPos ? 'Auf dem Plan zeigen' : 'Auf dem Plan setzen'}</button>` : '';
 async function loadCtxNotes() {
   const [g, st, c] = await Promise.all([insp?.gateId && db.get('gates', insp.gateId), insp?.siteId && db.get('sites', insp.siteId), insp?.customerId && db.get('customers', insp.customerId)]);
-  ctxSite = st || null; ctxEtage = g?.etageId || null;
+  ctxSite = st || null; ctxEtage = g?.etageId || null; ctxPos = !!g?.pos;
   ctxNotes = { gates: g?.intNote || '', sites: st?.intNote || '', customers: c?.intNote || '', visits: insp?.visitId ? (await db.get('visits', insp.visitId))?.intNote || '' : '' };
 }
 
@@ -2721,6 +2725,7 @@ async function renderPlan(sid, fid) {
     ${ph ? `<div class="pv-stage" id="pvStage"><div class="pv-world"><img id="pvImg" src="${planUrl}" width="${f.map.w}" height="${f.map.h}" alt="Plan ${esc(f.name)}" draggable="false"></div><div class="pv-pins" id="pvPins"></div></div>
       ${ctrls}
       <p class="pv-ui pv-placehint hidden" id="pvPlaceHint"></p>
+      <div class="pv-ui pv-list" id="pvList"></div>
       <p class="pv-ui pv-hint" id="pvHint">${fine ? 'Doppelklick: Tür oder Tor setzen · Ziehen: verschieben · Mausrad: zoomen · Umschalt + Rad oder rechte Maustaste: drehen' : 'Ein Finger: verschieben<br>Zwei Finger: zoomen und drehen<br>📍 tippen, um Türen zu setzen'}</p>`
     : `<div class="pv-empty"><p>Für <b>${esc(f.name)}</b> gibt es noch keinen Plan.</p><p class="muted small">Ein Foto oder Bild des Grundrisses wählen. Es bleibt nur auf diesem Gerät gespeichert und wird mit Terminen mitgeschickt.</p>
       <div class="pv-src">${FINE.matches ? planUpBtn(sid, f.id, '🖼 Bild für den Plan wählen', 'big-btn primary') : planSources(sid, f.id)}</div></div>`}
@@ -2730,6 +2735,7 @@ async function renderPlan(sid, fid) {
   const stage = document.getElementById('pvStage'), zEl = document.getElementById('pvZ'), rEl = document.getElementById('pvR'), cEl = document.getElementById('pvC');
   planCtl = mountPlan(stage, document.getElementById('pvImg'), {
     w: f.map.w, h: f.map.h, rot: +settings.get('planRot:' + f.id, 0) || 0,
+    pad: FINE.matches ? 84 : 50,
     onRot: (r) => settings.set('planRot:' + f.id, Math.round(r * 10) / 10),
     onTap: (x, y, t) => planTap(x, y, t),
     onDbl: (x, y) => planTap(x, y, 'mouse', true),
@@ -2741,10 +2747,10 @@ async function renderPlan(sid, fid) {
       if (cEl) { cEl.style.transform = `rotate(${v.r}deg)`; cEl.parentElement.classList.toggle('off', Math.abs(v.r) < 0.5); }
     },
   });
-  setTimeout(() => document.getElementById('pvHint')?.classList.add('gone'), 4000);
+  setTimeout(() => { document.getElementById('pvHint')?.classList.add('gone'); layoutPins(); }, 4000);
   PS = { sid, fid: f.id, site: st, w: f.map.w, h: f.map.h, place: false, armed: null, sel: null };
   await planLoad(sid);
-  pinPointers(document.getElementById('pvPins'));
+  pinPointers(document.getElementById('pvPins')); listDrag();
   drawPins();
   if (planCtx.gid) {
     const g = PS.gates.find(x => x.id === planCtx.gid);
@@ -2774,23 +2780,153 @@ function pinStatus(g) {
   return !d ? 'nie' : hasDefects(d) ? 'maengel' : 'fertig';
 }
 const PIN_ST = { offen: 'offen', arbeit: 'in Arbeit', fertig: 'ohne Mängel', maengel: 'mit Mängeln', nie: 'noch nie geprüft' };
+// Markierung: kleiner Punkt am Ort (Tür rund, Tor eckig, Farbe = Status). Der Name steht außerhalb
+// des Plans am Rand, eine Linie führt vom Punkt zum Namen. So bleibt der Plan frei.
 function drawPins() {
   const box = document.getElementById('pvPins'); if (!box || !PS) return;
   const hl = planCtx.vid;
-  box.innerHTML = PS.gates.filter(g => g.pos?.etageId === PS.fid).map(g => {
-    const u = gateUnit(g);
-    return `<button type="button" class="pv-pin k-${gateKind(g)} st-${pinStatus(g)} ${hl ? (PS.inV.has(g.id) ? 'hl' : 'dim') : ''} ${PS.sel === g.id ? 'sel' : ''}" data-gid="${g.id}" title="${esc(`${u.noun} ${u.nr || ''} ${u.standort || ''}`.trim())}"><span>${esc(u.nr || '?')}</span></button>`;
-  }).join('') + (PS.temp ? '<span class="pv-pin temp"><span>＋</span></span>' : '');
+  const gs = PS.gates.filter(g => g.pos?.etageId === PS.fid);
+  const cls = (g) => `k-${gateKind(g)} st-${pinStatus(g)} ${hl ? (PS.inV.has(g.id) ? 'hl' : 'dim') : ''} ${PS.sel === g.id ? 'sel' : ''}`;
+  const tip = (g) => { const u = gateUnit(g); return esc(`${u.noun} ${u.nr || ''} ${u.standort || ''}`.trim()); };
+  box.innerHTML = `<svg class="pv-lines" id="pvLines">${gs.map(g => `<line class="${cls(g)}" data-gid="${g.id}"/>`).join('')}</svg>`
+    + gs.map(g => `<button type="button" class="pv-pin ${cls(g)}" data-gid="${g.id}" title="${tip(g)}" aria-label="${tip(g)}"></button>`).join('')
+    + gs.map(g => `<button type="button" class="pv-lbl ${cls(g)}" data-gid="${g.id}" title="${tip(g)}">${esc(gateUnit(g).nr || '?')}</button>`).join('')
+    + (PS.temp ? '<span class="pv-pin temp"></span>' : '');
+  box.querySelectorAll('.pv-lbl').forEach(el => { el._w = el.offsetWidth; el._h = el.offsetHeight; });
+  drawList();
   layoutPins();
+}
+// Liste: Türen und Tore dieser Etage (und ohne Etage), die noch nicht auf dem Plan sind.
+// Antippen/Anklicken: dann auf dem Plan tippen/klicken, wo sie ist. Am PC auch direkt auf den Plan ziehen.
+const planUnplaced = () => PS.gates.filter(g => !g.pos && (!g.etageId || g.etageId === PS.fid)).sort((a, b) => (!!a.etageId === !!b.etageId ? byNr(a, b) : a.etageId ? -1 : 1));
+function drawList() {
+  const el = document.getElementById('pvList'); if (!el || !PS) return;
+  const gs = planUnplaced(), fine = FINE.matches, open = settings.get('planList', fine);
+  el.classList.toggle('open', !!open); el.classList.toggle('fine', fine);
+  if (!gs.length) { el.innerHTML = ''; el.classList.add('hidden'); return; }
+  el.classList.remove('hidden');
+  const head = `<button type="button" class="pv-list-h" data-act="pvListT">📋 Noch nicht auf dem Plan <b>${gs.length}</b> <span class="caret">${open ? '▴' : '▾'}</span></button>`;
+  if (!open) { el.innerHTML = head; return; }
+  let lastNo = false;
+  el.innerHTML = head + `<div class="pv-list-b">${gs.map(g => {
+    const u = gateUnit(g), sep = !g.etageId && !lastNo ? '<div class="pv-list-sep">ohne Etage</div>' : '';
+    if (!g.etageId) lastNo = true;
+    return `${sep}<button type="button" class="pv-list-row ${PS.armed === g.id ? 'on' : ''}" data-act="pvArm" data-id="${g.id}" title="${fine ? 'Anklicken und dann auf den Plan klicken, oder direkt auf den Plan ziehen' : 'Antippen, dann auf dem Plan tippen'}"><span class="kind-tag ${gateKind(g)}">${esc(u.noun)}</span> <b>${esc(u.nr || '–')}</b> <span class="muted small">${esc(u.standort || '')}</span></button>`;
+  }).join('')}</div>`;
+}
+let listD = null, listWired = false;
+function listDrag() {
+  const el = document.getElementById('pvList'); if (!el) return;
+  el.addEventListener('pointerdown', (e) => {
+    const r = e.target.closest('.pv-list-row'); if (!r || e.pointerType !== 'mouse' || e.button) return;
+    listD = { id: r.dataset.id, x: e.clientX, y: e.clientY, ghost: null, row: r };
+  });
+  if (listWired) return; listWired = true;
+  window.addEventListener('pointermove', (e) => {
+    const d = listD;
+    if (!d) return;
+    if (!d.ghost && Math.hypot(e.clientX - d.x, e.clientY - d.y) > 6) {
+      const g = PS?.gates.find(q => q.id === d.id); if (!g) { listD = null; return; }
+      d.ghost = document.createElement('div'); d.ghost.className = `pv-ghost k-${gateKind(g)}`; d.ghost.textContent = gateUnit(g).nr || '?';
+      document.body.appendChild(d.ghost);
+    }
+    if (d.ghost) d.ghost.style.transform = `translate(${e.clientX}px, ${e.clientY}px)`;
+  });
+  window.addEventListener('pointerup', (e) => {
+    if (!listD) return; const was = listD; listD = null;
+    if (!was.ghost) return;
+    was.ghost.remove();
+    was.row.dataset.noclick = '1'; setTimeout(() => delete was.row.dataset.noclick, 50);
+    const st = document.getElementById('pvStage')?.getBoundingClientRect(); if (!st || !PS || !planCtl) return;
+    if (e.clientX < st.left || e.clientX > st.right || e.clientY < st.top || e.clientY > st.bottom || document.elementFromPoint(e.clientX, e.clientY)?.closest('.pv-list')) return;
+    const [x, y] = planCtl.toImage(e.clientX - st.left, e.clientY - st.top);
+    if (x < 0 || y < 0 || x > PS.w || y > PS.h) return;
+    const g = PS.gates.find(q => q.id === was.id); if (!g) return;
+    PS.armed = null; setPlaceHint();
+    savePos(g, { etageId: PS.fid, x, y }).then(() => { drawPins(); buzz(); openCard(g.id); });
+  });
 }
 function layoutPins() {
   if (!PS || !planCtl) return;
-  document.querySelectorAll('#pvPins .pv-pin').forEach(el => {
+  const box = document.getElementById('pvPins'); if (!box) return;
+  const W = box.clientWidth, H = box.clientHeight;
+  const pt = {};
+  box.querySelectorAll('.pv-pin').forEach(el => {
     const g = el.dataset.gid ? PS.gates.find(x => x.id === el.dataset.gid) : null, p = g ? g.pos : PS.temp;
     if (!p) return;
     const [x, y] = planCtl.toScreen(p.x, p.y);
-    el.style.transform = `translate(${x}px, ${y}px) translate(-50%, calc(-100% - 7px))`;
+    el.style.transform = `translate(${x}px, ${y}px) translate(-50%, -50%)`;
+    if (g) pt[g.id] = [x, y];
   });
+  // Rahmen des (gedrehten) Bildes auf dem Schirm; die Namen stehen außen herum, notfalls am Bildschirmrand
+  const cs = [[0, 0], [PS.w, 0], [0, PS.h], [PS.w, PS.h]].map(([a, b]) => planCtl.toScreen(a, b));
+  const lbls = [...box.querySelectorAll('.pv-lbl')];
+  const LW = Math.max(40, ...lbls.map(l => l._w || 0)), LH = Math.max(22, ...lbls.map(l => l._h || 0)), G = 14;
+  // unten liegen am PC Werkzeugleiste und Hinweis: dort keine Namen
+  const sb = box.getBoundingClientRect();
+  const ui = [...document.querySelectorAll('.pv-tools, #pvHint:not(.gone)')].map(e => e.getBoundingClientRect()).filter(r => r.height && r.top > sb.top + H / 2);
+  const botR = ui.length ? Math.max(0, sb.bottom - Math.min(...ui.map(r => r.top)) + 4) : 0, fabR = FINE.matches ? 0 : 240;
+  const BB = { l: Math.min(...cs.map(c => c[0])), r: Math.max(...cs.map(c => c[0])), t: Math.min(...cs.map(c => c[1])), b: Math.max(...cs.map(c => c[1])) };
+  const F = {
+    l: Math.max(Math.min(...cs.map(c => c[0])), LW + G + 6), r: Math.min(Math.max(...cs.map(c => c[0])), W - LW - G - 6),
+    t: Math.max(Math.min(...cs.map(c => c[1])), LH + G + 6), b: Math.min(Math.max(...cs.map(c => c[1])), H - LH - G - 6 - botR),
+  };
+  const sides = { l: [], r: [], t: [], b: [] };
+  const lst = document.getElementById('pvList'), lr = lst && !lst.classList.contains('hidden') && FINE.matches ? lst.getBoundingClientRect() : null;
+  const R = { l: [lr ? lr.bottom - sb.top + 6 : 6, H - 6 - botR], r: [6, H - 6 - Math.max(botR, fabR)], t: [6, W - 6], b: [6, W - 6 - (FINE.matches ? 0 : 80)] };
+  // Platz je Seite: so viele Namen, wie nebeneinander passen
+  const cap = { l: (R.l[1] - R.l[0]) / (LH + 4), r: (R.r[1] - R.r[0]) / (LH + 4), t: (R.t[1] - R.t[0]) / (LW * .8 + 4), b: (R.b[1] - R.b[0]) / (LW * .8 + 4) };
+  const items = [];
+  for (const el of lbls) {
+    const q = pt[el.dataset.gid];
+    if (!q || q[0] < 0 || q[1] < 0 || q[0] > W || q[1] > H) { el.style.display = 'none'; continue; }
+    el.style.display = '';
+    const d = { l: q[0] - F.l, r: F.r - q[0], t: q[1] - F.t, b: F.b - q[1] };
+    // Seiten, an denen außerhalb des Bildes kein Platz ist, nur notfalls nehmen
+    if (BB.l < F.l - 1) d.l += 1e4; if (BB.r > F.r + 1) d.r += 1e4; if (BB.t < F.t - 1) d.t += 1e4; if (BB.b > F.b + 1) d.b += 1e4;
+    const order = Object.keys(d).sort((a, b) => d[a] - d[b]);
+    items.push({ el, q, w: el._w || LW, h: el._h || LH, order, pref: d[order[1]] - d[order[0]] });
+  }
+  // Wer eine Seite klar bevorzugt, bekommt sie zuerst; ist eine Seite voll, geht es zur nächstbesten
+  items.sort((a, b) => b.pref - a.pref);
+  for (const a of items) { const s = a.order.find(k => sides[k].length < Math.floor(cap[k])) || a.order[0]; sides[s].push(a); }
+  // Auf jeder Seite der Reihe nach anordnen: Gruppen, die sich überdecken, mittig um ihre Punkte legen
+  const spread = (arr, size, lo, hi) => {
+    arr.sort((a, b) => a.c - b.c);
+    const cl = [];
+    for (const a of arr) {
+      cl.push({ items: [a], len: a[size], want: a.c - a[size] / 2 });
+      for (;;) {
+        const k = cl.length; if (k < 2) break;
+        const A = cl[k - 2], B = cl[k - 1];
+        const aStart = Math.max(lo, A.want / A.items.length);
+        if (aStart + A.len + 4 <= Math.max(lo, B.want / B.items.length)) break;
+        // zusammenlegen: Mitte der Gruppe = Mittel der Wunschlagen
+        const all = [...A.items, ...B.items]; let off = 0, sum = 0;
+        for (const it of all) { sum += it.c - off - it[size] / 2; off += it[size] + 4; }
+        cl.splice(k - 2, 2, { items: all, len: off - 4, want: sum });
+      }
+    }
+    let pos = lo;
+    for (const c of cl) { let st = Math.max(pos, c.want / c.items.length); c.st = st; pos = st + c.len + 4; }
+    let end = hi;
+    for (let i = cl.length - 1; i >= 0; i--) { const c = cl[i]; c.st = Math.max(lo, Math.min(c.st, end - c.len)); end = c.st - 4; }
+    for (const c of cl) { let p = c.st; for (const it of c.items) { it.c = p + it[size] / 2; p += it[size] + 4; } }
+  };
+  for (const a of [...sides.l, ...sides.r]) a.c = a.q[1];
+  for (const a of [...sides.t, ...sides.b]) a.c = a.q[0];
+  spread(sides.l, 'h', ...R.l); spread(sides.r, 'h', ...R.r); spread(sides.t, 'w', ...R.t); spread(sides.b, 'w', ...R.b);
+  const lines = {};
+  box.querySelectorAll('#pvLines line').forEach(l => { lines[l.dataset.gid] = l; l.style.display = 'none'; });
+  const place = (a, x, y, ax, ay) => {
+    a.el.style.transform = `translate(${Math.round(x)}px, ${Math.round(y)}px)`;
+    const ln = lines[a.el.dataset.gid]; if (!ln) return;
+    ln.style.display = ''; ln.setAttribute('x1', a.q[0]); ln.setAttribute('y1', a.q[1]); ln.setAttribute('x2', ax); ln.setAttribute('y2', ay);
+  };
+  for (const a of sides.l) { const x = F.l - G - a.w; place(a, x, a.c - a.h / 2, x + a.w, a.c); }
+  for (const a of sides.r) { const x = F.r + G; place(a, x, a.c - a.h / 2, x, a.c); }
+  for (const a of sides.t) { const y = F.t - G - a.h; place(a, a.c - a.w / 2, y, a.c, y + a.h); }
+  for (const a of sides.b) { const y = F.b + G; place(a, a.c - a.w / 2, y, a.c, y); }
   if (PS.find && PS.temp) { const [x, y] = planCtl.toScreen(PS.temp.x, PS.temp.y); posFind(x, y); }
 }
 function posFind(x, y) {
@@ -2834,10 +2970,11 @@ function setPlaceHint() {
   h.textContent = g ? `${FINE.matches ? 'Klicken' : 'Tippen'}, wo ${gateUnit(g).noun} ${gateUnit(g).nr || ''} ist` : PS.place ? 'Auf den Plan tippen, wo eine Tür oder ein Tor ist' : '';
   h.classList.toggle('hidden', !h.textContent);
   document.querySelector('[data-act=pvPlace]')?.classList.toggle('on', !!PS.place);
+  drawList();
 }
 // Suchfeld zum Zuordnen: Tür-Nr. / Tor-Nr. eintippen, vorhandene wählen oder neu anlegen
 function openFind(sx, sy) {
-  PS.find = true; PS.fq = '';
+  PS.find = true; PS.fq = ''; PS.fAll = false;
   const stage = document.getElementById('pvStage');
   stage.insertAdjacentHTML('beforeend', `<div class="pv-ui pv-find ${FINE.matches ? 'fine' : 'touch'}" id="pvFind">
     <div class="pv-find-h"><input class="field" id="pvFindIn" placeholder="Tür-Nr. / Tor-Nr. suchen oder neu" autocomplete="off" enterkeyhint="go"><button class="pv-find-x" data-act="pvFindX" aria-label="Abbrechen">✕</button></div>
@@ -2847,7 +2984,7 @@ function openFind(sx, sy) {
   setTimeout(() => document.getElementById('pvFindIn')?.focus(), 30);
 }
 function closeFind() { PS.find = false; PS.temp = null; PS.fIdx = 0; document.getElementById('pvFind')?.remove(); drawPins(); }
-function findHits(q) {
+function findHits(q, all = PS.fAll) {
   const nq = normNr(q), t = normTxt(q);
   const st = PS.site, sc = (g) => {
     const u = gateUnit(g), n = normNr(u.nr);
@@ -2855,18 +2992,23 @@ function findHits(q) {
     if (n && nq) { if (n === nq) return 10; if (n.startsWith(nq)) return 6; if (n.includes(nq)) return 4; }
     return normTxt(u.standort).includes(t) ? 2 : 0;
   };
-  return PS.gates.map(g => [g, sc(g)]).filter(([, s]) => s > 0).sort((a, b) => b[1] - a[1] || byNr(a[0], b[0])).slice(0, 40).map(([g]) => g);
+  // Nur Türen dieser Etage, außer „auch andere Etagen“ ist an
+  const here = (g) => { const e = g.pos?.etageId || g.etageId; return !e || e === PS.fid; }; // ohne Etage passt überall
+  return PS.gates.filter(g => all || here(g)).map(g => [g, sc(g)]).filter(([, s]) => s > 0).sort((a, b) => b[1] - a[1] || byNr(a[0], b[0])).slice(0, 40).map(([g]) => g);
 }
 function drawFind() {
   const box = document.getElementById('pvFindList'); if (!box) return;
-  const q = PS.fq.trim(), hits = findHits(q), exact = hits.some(g => normNr(gateUnit(g).nr) === normNr(q));
+  const q = PS.fq.trim(), hits = findHits(q), allHits = PS.fAll ? hits : findHits(q, true), exact = allHits.some(g => normNr(gateUnit(g).nr) === normNr(q));
+  const more = allHits.length - (PS.fAll ? 0 : hits.length), fname = floorName(PS.site, PS.fid) || 'diese Etage';
   PS.fItems = [...hits.map(g => ({ g })), ...(q && !exact ? [{ make: 'tuer' }, { make: 'tor' }] : [])];
   PS.fIdx = Math.min(PS.fIdx || 0, Math.max(0, PS.fItems.length - 1));
   box.innerHTML = PS.fItems.map((it, i) => {
     if (it.make) return `<button class="pv-find-row new ${i === PS.fIdx ? 'on' : ''}" data-act="pvFindPick" data-i="${i}">＋ ${it.make === 'tuer' ? 'Neue Tür' : 'Neues Tor'} „${esc(q)}“ anlegen</button>`;
-    const g = it.g, u = gateUnit(g), where = g.pos ? `liegt auf ${floorName(PS.site, g.pos.etageId) || 'Plan'}` : g.etageId ? floorName(PS.site, g.etageId) : '';
+    const g = it.g, u = gateUnit(g), where = g.pos ? `liegt auf ${floorName(PS.site, g.pos.etageId) || 'Plan'}` : g.etageId ? floorName(PS.site, g.etageId) : 'ohne Etage';
     return `<button class="pv-find-row ${i === PS.fIdx ? 'on' : ''}" data-act="pvFindPick" data-i="${i}"><span class="kind-tag ${gateKind(g)}">${esc(u.noun)}</span> <b>${esc(u.nr || '–')}</b> <span class="muted">${esc(u.standort || '')}</span>${where ? ` <span class="muted small">· ${esc(where)}</span>` : ''}</button>`;
-  }).join('') || `<p class="muted small pv-find-empty">${q ? '' : 'Alle Türen und Tore an diesem Objekt liegen schon auf einem Plan. Nummer eintippen, um eine neue anzulegen.'}</p>`;
+  }).join('') + (PS.fAll ? `<button class="pv-find-row scope" data-act="pvFindAll">↩ Nur ${esc(fname)} zeigen</button>`
+    : more ? `<button class="pv-find-row scope" data-act="pvFindAll">🔎 Auch andere Etagen durchsuchen <span class="muted small">(${more} ${q ? 'Treffer' : 'weitere'})</span></button>` : '')
+    || `<p class="muted small pv-find-empty">${q ? '' : `Auf ${esc(fname)} gibt es keine Tür und kein Tor, das noch nicht auf dem Plan ist. Nummer eintippen, um eine neue anzulegen.`}</p>`;
   box.querySelector('.on')?.scrollIntoView({ block: 'nearest' });
 }
 async function findPick(i) {
@@ -2911,7 +3053,7 @@ function closeCard() { document.getElementById('pvCard')?.remove(); if (PS) PS.s
 function pinPointers(box) {
   let d = null;
   box.addEventListener('pointerdown', (e) => {
-    const el = e.target.closest('.pv-pin[data-gid]'); if (!el) return;
+    const el = e.target.closest('.pv-pin[data-gid], .pv-lbl[data-gid]'); if (!el) return;
     e.stopPropagation(); el.setPointerCapture(e.pointerId);
     d = { el, gid: el.dataset.gid, x: e.clientX, y: e.clientY, drag: false, mouse: e.pointerType === 'mouse' };
     // Abstand Zeiger ↔ Spitze merken, damit die Markierung beim Ziehen nicht springt
@@ -3153,6 +3295,10 @@ document.addEventListener('click', async (e) => {
     case 'planGo': closeJump(); return location.hash.startsWith('#/plan/') ? location.replace(`#/plan/${b.dataset.site}/${b.dataset.id}${planSuffix()}`) : (location.hash = `#/plan/${b.dataset.site}/${b.dataset.id}`);
     case 'pvPlace': if (!PS) return; PS.place = !PS.place; PS.armed = null; if (!PS.place && PS.find) closeFind(); return setPlaceHint();
     case 'pvFindX': return closeFind();
+    case 'pvListT': settings.set('planList', !settings.get('planList', FINE.matches)); drawList(); return layoutPins();
+    case 'pvArm': { if (!PS || b.dataset.noclick) return; PS.armed = PS.armed === b.dataset.id ? null : b.dataset.id; PS.place = false; if (PS.find) closeFind(); if (PS.sel) closeCard();
+      if (!FINE.matches && PS.armed) settings.set('planList', false); setPlaceHint(); drawPins(); return; }
+    case 'pvFindAll': PS.fAll = !PS.fAll; PS.fIdx = 0; drawFind(); return document.getElementById('pvFindIn')?.focus();
     case 'pvFindPick': return findPick(+b.dataset.i);
     case 'pvCardX': closeCard(); return drawPins();
     case 'pvOpenItem': { const i = await db.get('inspections', b.dataset.id); return i && openItem(i); }
