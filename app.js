@@ -6,7 +6,7 @@ import { printTuer } from './print-tuer.js';
 import { LANG, setLang, startI18n } from './i18n.js';
 import { exportVisit, sendFile, importFile, fileName } from './sync.js';
 import { mountPlan, preparePlanImage } from './plan.js';
-import { renderGuide, guideHref, openGuideToc, openZoom, closeZoom } from './guide-view.js';
+import { renderGuide, guideHref, guidePopHTML, openGuideToc, openZoom, closeZoom } from './guide-view.js';
 
 const TEMPLATES = { [TEMPLATE_TORE.id]: TEMPLATE_TORE, [TEMPLATE_TUER.id]: TEMPLATE_TUER };
 const BY_KIND = { tor: TEMPLATE_TORE, tuer: TEMPLATE_TUER };
@@ -819,7 +819,15 @@ function guideLink(it) {
   if (!sec) return '';
   const before = sec.items.slice(0, sec.items.indexOf(it)).reverse().find(x => x.heading);
   const href = guideHref(tpl.kind, sec.title, (before ? before.heading + ' ' : '') + it.label);
-  return href ? ` <a class="guide-link" href="${href}" aria-label="Im Handbuch nachlesen" title="Im Handbuch nachlesen">📖</a>` : '';
+  return href ? ` <button type="button" class="guide-link" data-act="guidePop" data-href="${href}" aria-label="Im Handbuch nachlesen" title="Im Handbuch nachlesen">📖</button>` : '';
+}
+// Handbuch-Abschnitt als Fenster über der Seite: Bild und Erklärung, Schließen führt genau hierher zurück
+function openGuidePop(href) {
+  const html = guidePopHTML(href);
+  if (!html) return (location.hash = href);
+  const sheet = document.getElementById('sheet');
+  sheet.innerHTML = `<div class="sheet-inner gpop-sheet">${html}</div>`;
+  sheet.classList.add('show');
 }
 
 // Ein/Aus-Schalter für Abschnitte, die nicht jede Tür hat
@@ -2433,7 +2441,7 @@ function noteSection(store, id, val) {
   if (!id) return '';
   const key = `${store}:${id}`;
   if (!val && !openINotes.has(key)) return `<button type="button" class="inote-btn" data-act="inoteOpen" data-key="${key}">📝 ＋ Interne Notiz</button>`;
-  return `<section class="${DESK ? 'dk-panel' : 'card'} inote-card"><label class="inote-l"><span class="lbl">📝 Interne Notiz <span class="muted small">nur für uns, nicht im Protokoll</span></span>
+  return `<section class="${DESK ? 'dk-panel' : 'card'} inote-card"><button type="button" class="inote-x" data-act="inoteDel" data-key="${key}" aria-label="Notiz entfernen" title="Notiz entfernen">✕</button><label class="inote-l"><span class="lbl">📝 Interne Notiz <span class="muted small">nur für uns, nicht im Protokoll</span></span>
     <textarea class="field" rows="2" data-inote="${key}" placeholder="Notiz zu ${INOTE_LBL[store]}">${esc(val || '')}</textarea></label></section>`;
 }
 let inoteChain = Promise.resolve();
@@ -2738,6 +2746,9 @@ function closeJump() { document.getElementById('sheet').classList.remove('show')
 document.addEventListener('click', async (e) => {
   const sheet = document.getElementById('sheet');
   if (e.target === sheet) return closeJump();
+  const gp = e.target.closest('[data-gpop]');
+  if (gp) { e.preventDefault(); return openGuidePop(gp.dataset.gpop); }
+  if (e.target.closest('.gpop-more')) closeJump();
   const zimg = e.target.closest('.gdoc img[data-zoom]');
   if (zimg) return openZoom(zimg);
   if (e.target.closest('.col-rs')) return; // Ziehgriff am Spaltenrand sortiert nicht
@@ -2868,7 +2879,13 @@ document.addEventListener('click', async (e) => {
     case 'guideClose': { const r = guideReturn; guideReturn = null; if (r && !isGuide(r.hash)) { pendingY = r.y; return (location.hash = r.hash || '#/'); } return (location.hash = '#/'); }
     case 'guideToc': return openGuideToc(sheet);
     case 'zoomClose': return closeZoom();
-    case 'lang': setLang(LANG === 'en' ? 'de' : 'en'); return route();
+    case 'guidePop': return openGuidePop(b.dataset.href);
+    case 'inoteDel': {
+      const key = b.dataset.key; saveINote(key, ''); openINotes.delete(key);
+      const [st, id] = key.split(':'); const d = document.createElement('div'); d.innerHTML = noteSection(st, id, '');
+      return b.closest('.inote-card').replaceWith(d.firstElementChild);
+    }
+    case 'lang': { const y = scrollY; if (insp) await saveNow(); setLang(LANG === 'en' ? 'de' : 'en'); await route(); return window.scrollTo(0, y); }
     case 'menuGo': { closeJump(); return (location.hash = b.dataset.href); }
     case 'askDel': {
       if (b.dataset.quick) { const p = await deletePlan('inspection', b.dataset.id); await runDelete(p); return rerenderAfterDelete(p); }
@@ -3061,7 +3078,11 @@ document.addEventListener('keydown', (e) => {
   const k = e.key.length === 1 ? e.key.toLowerCase() : e.key;
   if (k === '?') { e.preventDefault(); return openKeys(); }
   if (k === '/') { const sb = document.getElementById('visitSearch') || document.getElementById('homeSearch') || document.getElementById('regSearch') || document.getElementById('kSearch') || document.getElementById('oSearch'); if (sb) { e.preventDefault(); sb.focus(); sb.select(); return; } }
-  if (k === 'h' && !isGuide(location.hash)) { e.preventDefault(); return (location.hash = '#/handbuch'); }
+  if (k === 'h' && !isGuide(location.hash)) {
+    e.preventDefault();
+    const gl = insp && (document.getElementById('r-' + kbCurId())?.querySelector('[data-act=guidePop]') || document.querySelector('.row.kb-cur [data-act=guidePop]'));
+    return gl ? openGuidePop(gl.dataset.href) : (location.hash = '#/handbuch');
+  }
   if (!insp || !tpl) return;
   const all = DESK && document.querySelector('main.dk-all');
   const inSection = all || (step > 0 && step < stepCount() - 1);
@@ -3116,6 +3137,22 @@ document.addEventListener('keydown', (e) => {
   if (inputs[i + 1]) inputs[i + 1].focus(); else e.target.blur();
 });
 
+// ---------- Sprache von überall umschalten ----------
+// Jede Kopfzeile bekommt den DE/EN-Knopf (am PC hat die linke Leiste ihn schon, außer beim Plan im Vollbild).
+function addLangBtns() {
+  const sel = DESK ? 'header.pv-top' : 'header.bar, header.pv-top';
+  document.querySelectorAll(sel).forEach(h => {
+    if (h.querySelector('[data-act=lang]')) return;
+    const b = document.createElement('button');
+    b.className = h.matches('.pv-top') ? 'pv-b lang-btn' : 'icon-btn lang-btn';
+    b.dataset.act = 'lang'; b.setAttribute('aria-label', 'Sprache'); b.title = 'Sprache / Language';
+    b.textContent = LANG === 'en' ? 'DE' : 'EN';
+    const more = [...h.children].reverse().find(x => /⋯/.test(x.textContent || ''));
+    more ? h.insertBefore(b, more) : h.appendChild(b);
+  });
+}
+new MutationObserver(addLangBtns).observe($app, { childList: true, subtree: true });
+
 // ---------- Laptop / PC: eigene Oberfläche ----------
 // Links eine feste Leiste (Termine bzw. Abschnitte der Prüfung), rechts Werkzeugleiste + dichte Tabellen.
 const pct = (a, b) => b ? Math.round(a / b * 100) : 0;
@@ -3131,7 +3168,8 @@ async function renderNav() {
     nav.innerHTML = `
       <button class="dn-back" data-act="home">‹ ${insp.paper ? 'Zurück' : insp.visitId ? 'Zum Termin' : 'Übersicht'}</button>
       <div class="dn-title"><span class="dn-h">${unitHead(u)}</span><span>${esc(u.noun)} · ${esc(inspTitle(insp))}</span></div>
-      ${sideSteps()}`;
+      ${sideSteps()}
+      <div class="dn-foot"><a class="tb-btn sm" href="#/handbuch" title="Feldhandbuch">📖 Handbuch</a><button class="tb-btn sm" data-act="lang" title="Sprache">${LANG === 'en' ? 'DE' : 'EN'}</button></div>`;
     return;
   }
   const visits = await db.all('visits');

@@ -521,3 +521,23 @@ html.pv-open, html.pv-open body { overflow: hidden; overscroll-behavior: none; }
 .inote-btn:hover { color: var(--ink); border-color: var(--muted); }
 .inote-card { padding: 10px 12px; }
 .inote-l { display: block; } .inote-l .lbl { display: block; margin-bottom: 4px; font-weight: 600; }
+
+/* Handbuch als Fenster */
+button.guide-link { border: 0; background: none; cursor: pointer; font: inherit; font-size: .85em; line-height: 1; }
+.gpop-sheet { max-height: 88vh; padding-top: 0; }
+.gpop-head { position: sticky; top: 0; z-index: 1; display: flex; align-items: flex-start; gap: 10px; padding: 12px 0 8px; background: var(--card); border-bottom: 1px solid var(--line); }
+.gpop-head > div { flex: 1; display: flex; flex-direction: column; gap: 2px; }
+.gpop-head b { font-size: 1.1em; }
+.gpop-x { flex: none; background: var(--na-bg); color: var(--ink); }
+.gpop-figs { display: flex; flex-direction: column; gap: 10px; margin: 10px 0 4px; }
+.gpop-fig { margin: 0; }
+.gpop-fig img { width: 100%; height: auto; border-radius: 8px; border: 1px solid var(--line); background: #fff; cursor: zoom-in; }
+.gpop-fig figcaption { font-size: .85em; color: var(--muted); margin-top: 4px; }
+.gpop-body { margin-top: 8px; }
+.gpop-body ul { padding-left: 20px; }
+.gpop-body li { margin: 6px 0; }
+.gpop-more { margin-top: 12px; }
+.inote-card { position: relative; }
+.inote-x { position: absolute; top: 6px; right: 6px; width: 36px; height: 36px; border-radius: 50%; border: 0; background: none; color: var(--muted); font-size: 1em; cursor: pointer; }
+.inote-x:hover { background: var(--na-bg); color: var(--ink); }
+.inote-l .lbl { padding-right: 36px; }

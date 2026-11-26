@@ -158,3 +158,56 @@ export function openZoom(img) {
   z.classList.add('show');
 }
 export function closeZoom() { const z = document.getElementById('gzoom'); if (!z?.classList.contains('show')) return false; z.classList.remove('show'); return true; }
+
+// ----- Handbuch als Popup: an Ort und Stelle, ohne die Seite zu verlassen -----
+// Zeigt den Abschnitt zu einem Prüfpunkt: zuerst die Bilder (eigene und die verlinkten Abbildungen),
+// dann die Erklärung. Schließen führt genau dorthin zurück, wo man war.
+const pageDom = new Map();
+function domOf(pid) {
+  if (!pageDom.has(pid)) { const t = document.createElement('div'); t.innerHTML = pageById(pid)?.html || ''; pageDom.set(pid, t); }
+  return pageDom.get(pid);
+}
+const lvl = (el) => /^H([1-6])$/.test(el?.tagName || '') ? +el.tagName[1] : 0;
+// Ein Abschnitt: die Überschrift mit id=anchor und alles bis zur nächsten gleich hohen oder höheren Überschrift
+function sectionOf(pid, anchor) {
+  const root = domOf(pid);
+  let h = root.querySelector(`[id="${CSS.escape(anchor)}"]`);
+  if (!h) return null;
+  // Abbildung direkt verlinkt: die Überschrift darüber nehmen
+  if (!lvl(h)) { for (let s = h.previousElementSibling; s; s = s.previousElementSibling) if (lvl(s)) { h = s; break; } }
+  const L = lvl(h) || 4, nodes = [];
+  for (let n = h.nextElementSibling; n && !(lvl(n) && lvl(n) <= L); n = n.nextElementSibling) nodes.push(n);
+  return { title: h.textContent, nodes };
+}
+function figureOf(pid, anchor) {
+  const el = domOf(pid).querySelector(`[id="${CSS.escape(anchor)}"]`);
+  return el?.matches('figure') ? el : el?.querySelector?.('figure');
+}
+export function guidePopHTML(href) {
+  const m = String(href || '').match(/^#\/handbuch\/([^/]+)\/(.+)$/);
+  if (!m) return null;
+  const [, pid, anchor] = m, sec = sectionOf(pid, anchor);
+  if (!sec) return null;
+  const body = document.createElement('div');
+  sec.nodes.forEach(n => body.appendChild(n.cloneNode(true)));
+  // Bilder sammeln: eigene Abbildungen im Abschnitt und die, auf die er verweist
+  const figs = [];
+  body.querySelectorAll('figure').forEach(f => { figs.push({ html: f.querySelector('img')?.outerHTML || '', cap: '' }); f.remove(); });
+  body.querySelectorAll('a[href^="#/handbuch/"]').forEach(a => {
+    const [, p2, a2] = a.getAttribute('href').match(/^#\/handbuch\/([^/]+)\/(.+)$/) || [];
+    const f = p2 && /^abb-/.test(a2) && figureOf(p2, a2);
+    if (f && !figs.some(x => x.id === a2)) figs.push({ id: a2, html: f.querySelector('img')?.outerHTML || '', cap: a.textContent });
+    a.setAttribute('data-gpop', a.getAttribute('href')); a.setAttribute('href', 'javascript:void 0');
+  });
+  // Die Zeile „Bild / drawing“ steht schon als Bild oben
+  body.querySelectorAll('li').forEach(li => { if (/^Bild\s*\/\s*drawing/i.test(li.textContent.trim())) li.remove(); });
+  const sub = body.querySelector('.gsub'); const subTxt = sub ? sub.textContent : ''; sub?.remove();
+  const imgs = figs.map(f => `<figure class="gpop-fig">${f.html.replace('loading="lazy"', '').replace('<img ', '<img data-zoom ')}${f.cap ? `<figcaption>${esc(f.cap)}</figcaption>` : ''}</figure>`).join('');
+  return `<div class="gpop notr">
+    <div class="gpop-head"><div><b>${esc(sec.title)}</b>${subTxt ? `<span class="muted small">${esc(subTxt)}</span>` : ''}</div>
+      <button class="icon-btn gpop-x" data-act="cancelDel" aria-label="Schließen">✕</button></div>
+    ${imgs ? `<div class="gpop-figs gdoc">${imgs}</div>` : ''}
+    <div class="gdoc gpop-body">${body.innerHTML}</div>
+    <a class="big-btn gpop-more" href="${esc(href)}">📖 Im Handbuch weiterlesen ›</a>
+  </div>`;
+}

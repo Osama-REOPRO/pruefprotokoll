@@ -326,3 +326,8 @@ html.desk .fold-body .grid { padding: 10px 0 !important; }
 html.desk .ent-kunden { margin-bottom: 12px; }
 html.desk .inote-card { padding: 8px 14px; margin-bottom: 12px; }
 html.desk .inote-btn { margin-bottom: 10px; }
+html.desk .sheet-inner.gpop-sheet { width: min(760px, 92vw); max-height: 88vh; padding: 0 18px 14px; }
+html.desk .gpop-figs { flex-direction: row; flex-wrap: wrap; }
+html.desk .gpop-fig { flex: 1 1 300px; }
+html.desk .sheet-inner .gpop-more { justify-content: center; color: var(--brand); font-weight: 600; }
+html.desk .protocol-nav .dn-foot, html.desk #dknav .dn-foot { margin-top: auto; }
