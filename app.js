@@ -5,6 +5,7 @@ import { printTore } from './print-tore.js';
 import { printTuer } from './print-tuer.js';
 import { LANG, setLang, startI18n } from './i18n.js';
 import { exportVisit, sendFile, importFile, fileName } from './sync.js';
+import { mountPlan, preparePlanImage } from './plan.js';
 import { renderGuide, guideHref, openGuideToc, openZoom, closeZoom } from './guide-view.js';
 
 const TEMPLATES = { [TEMPLATE_TORE.id]: TEMPLATE_TORE, [TEMPLATE_TUER.id]: TEMPLATE_TUER };
@@ -262,9 +263,15 @@ async function routeInner() {
   document.getElementById('snack').classList.remove('show');
   const h = location.hash.replace(/^#\/?/, '');
   const parts = h.split('/');
+  if (parts[0] !== 'plan') planClose();
+  if (parts[0] === 'plan' && parts[1]) {
+    if (insp) await saveNow();
+    insp = null; tpl = null; visit = null; curDoor = null; doorScope = null;
+    return renderPlan(parts[1], parts[2]);
+  }
   if (!['p', 'd', 'druck', 'druck-t', 'handbuch'].includes(parts[0])) {
     // Woher man kam: Türseite, Objekt und Kunde führen mit ‹ genau dorthin zurück
-    if ((parts[0] === 'o' || parts[0] === 'k') && parts[1] && !/^#\/(d|p)\//.test(prevHash) && screenOf(prevHash) !== screenOf(location.hash)) backOf[parts[0]] = prevHash || `#/${parts[0]}`;
+    if ((parts[0] === 'o' || parts[0] === 'k') && parts[1] && !/^#\/(d|p|plan)\//.test(prevHash) && screenOf(prevHash) !== screenOf(location.hash)) backOf[parts[0]] = prevHash || `#/${parts[0]}`;
     listBack = location.hash || '#/';
   }
   if ((parts[0] === 'druck' || parts[0] === 'druck-t') && parts[1]) {
@@ -1290,7 +1297,8 @@ async function runDelete(p) {
   const I = new Set(p.inspections);
   if (insp && I.has(insp.id)) { p.backTo = insp.paper ? (insp.returnTo || `#/d/${insp.gateId}`) : insp.visitId && !p.visits.includes(insp.visitId) ? `#/t/${insp.visitId}` : '#/'; clearTimeout(saveTimer); insp = null; tpl = null; }
   if (p.kind === 'gate' && curDoor?.id === p.id) { p.backTo = listBack && !/^#\/d\//.test(listBack) ? listBack : `#/o/${curDoor.siteId}`; curDoor = null; }
-  const photos = (await db.all('photos')).filter(ph => I.has(ph.inspectionId));
+  const S = new Set(p.sites || []);
+  const photos = (await db.all('photos')).filter(ph => I.has(ph.inspectionId) || S.has(ph.planSite));
   for (const ph of photos) await db.del('photos', ph.id);
   for (const id of p.inspections) await db.del('inspections', id);
   for (const store of ['visits', 'gates', 'sites', 'customers']) for (const id of p[store]) await db.del(store, id);
@@ -2091,11 +2099,14 @@ async function renderObjekt(id) {
   const kChips = ks.map(c => { const n = R.gates.filter(g => g.siteId === id && g.customerId === c.id).length;
     return `<span class="ent-chip"><a href="#/k/${c.id}">👤 ${esc(c.name || 'ohne Namen')}</a> <span class="muted small">${n}</span>${n ? '' : `<button class="mini-x" data-act="siteKundeDel" data-id="${c.id}" aria-label="Vom Objekt entfernen" title="Vom Objekt entfernen">×</button>`}</span>`; }).join('');
   const D = doorList(R, getDF(), regQuery.trim());
-  const plan = `<p class="muted small plan-soon">🗺 Grundrisse je Etage, mit den Türen darauf markiert, kommen als Nächstes.</p>`;
+  const maps = floorsOf(st).filter(f => f.map);
+  const plan = `<p class="muted small plan-soon">Mit „＋ Plan“ ein Bild des Grundrisses zu einer Etage hinzufügen. Türen auf dem Plan markieren kommt als Nächstes.</p>`;
+  const planRow = maps.length ? `<section class="${DESK ? 'dk-sum' : 'card'} ent-kunden ent-plans"><span class="muted">🗺 Pläne</span> ${maps.slice().reverse().map(f => `<button class="chip" data-act="planGo" data-site="${id}" data-id="${f.id}">${esc(f.name)}</button>`).join('')}</section>` : '';
   $app.innerHTML = `
     ${regBar(backOf.o, `<span id="scrT">${esc(hasName(st) ? sname(st) : 'Neues Objekt')}</span>`, `Objekt${st.plzOrt ? ' · ' + esc(st.plzOrt) : ''}`, `${DESK ? `${addDoorBtns('tb-btn primary')}${searchBox('regSearch', regQuery, 'Tür suchen …  ( / )')}` : ''}<button class="${DESK ? 'tb-btn icon' : 'icon-btn'}" data-act="menu" data-for="site" data-id="${id}" aria-label="Mehr">⋯</button>`)}
     <main class="${DESK ? 'dk-page' : 'home'} reg-page ent-page">
       <section class="${DESK ? 'dk-sum' : 'card'} ent-kunden"><span class="muted">Kunden</span> ${kChips || '<span class="muted small">noch keiner</span>'} <button class="mini-link" data-act="siteKundeAdd" data-id="${id}">＋ Kunde</button></section>
+      ${planRow}
       <div class="ent-top">
         ${fold('oData', 'Objektdaten', fieldGrid(og.fields, st, 'data-os', 'data-sid') + noteField('sites', id, st.intNote, 'Interne Notiz'), !hasName(st) || DESK)}
         ${fold('oFloors', `Etagen und Pläne <span class="muted small">${floorsOf(st).length}</span>`, floorsEditor(st) + plan, DESK)}
@@ -2521,6 +2532,7 @@ function floorsEditor(st) {
     ${fl.map((f, i) => `<div class="fl-row"><input class="field sm" data-flname="${st.id}:${f.id}" value="${esc(f.name)}" autocomplete="off">
       <button class="mini-x" data-act="flMove" data-site="${st.id}" data-id="${f.id}" data-d="-1" ${i === 0 ? 'disabled' : ''} aria-label="Nach unten">↓</button>
       <button class="mini-x" data-act="flMove" data-site="${st.id}" data-id="${f.id}" data-d="1" ${i === fl.length - 1 ? 'disabled' : ''} aria-label="Nach oben">↑</button>
+      ${f.map ? `<button class="mini-x plan-b on" data-act="planGo" data-site="${st.id}" data-id="${f.id}" title="Plan öffnen" aria-label="Plan öffnen">🗺</button>` : planUpBtn(st.id, f.id, '＋ Plan', 'mini-x plan-b')}
       <button class="mini-x" data-act="flDel" data-site="${st.id}" data-id="${f.id}" aria-label="Löschen">×</button></div>`).join('') || '<p class="muted small">Noch keine Etagen.</p>'}
     <div class="chips">${FLOOR_QUICK.filter(n => !fl.some(f => normTxt(f.name).replace(/[\s.]/g, '') === normTxt(n).replace(/[\s.]/g, ''))).map(n => `<button class="chip" data-act="flAdd" data-site="${st.id}" data-v="${esc(n)}">＋ ${esc(n)}</button>`).join('')}
       <button class="chip" data-act="flAddAsk" data-site="${st.id}">＋ andere …</button></div></div>`;
@@ -2533,6 +2545,123 @@ async function flUpdate(siteId, fn) {
   if (doorScope === siteId && !document.getElementById('sheet').classList.contains('show')) { const y = scrollY; await renderObjekt(siteId); return window.scrollTo(0, y); }
   const box = document.querySelector('.fl-edit'); if (box) box.outerHTML = floorsEditor(st);
 }
+
+
+// ---------- Etagenplan ansehen ----------
+// Bild liegt im Speicher "photos" ({ planSite, planEtage }), die Etage zeigt mit etage.map = { photoId, w, h } darauf.
+let planCtl = null, planUrl = null, planCur = null;
+const FINE = matchMedia('(hover: hover) and (pointer: fine)');
+function planClose() { planCtl?.destroy(); planCtl = null; planCur = null; if (planUrl) { URL.revokeObjectURL(planUrl); planUrl = null; } document.documentElement.classList.remove('pv-open'); }
+const planUpBtn = (sid, fid, label, cls = 'chip') => `<label class="${cls} plan-up">${label}<input type="file" accept="image/*" data-planup="${sid}:${fid}" hidden></label>`;
+async function renderPlan(sid, fid) {
+  planClose();
+  const st = await db.get('sites', sid); if (!st) { location.hash = '#/o'; return; }
+  const fl = floorsOf(st), f = fl.find(x => x.id === fid) || fl.find(x => x.map) || fl[0];
+  if (!f) { location.hash = `#/o/${sid}`; return; }
+  if (f.id !== fid) { history.replaceState(null, '', `#/plan/${sid}/${f.id}`); lastHash = location.hash; }
+  const ph = f.map?.photoId && await db.get('photos', f.map.photoId);
+  if (ph?.blob) planUrl = URL.createObjectURL(ph.blob);
+  planCur = { sid, fid: f.id };
+  const fine = FINE.matches;
+  const tabs = fl.map(x => `<button class="pv-tab ${x.id === f.id ? 'on' : ''} ${x.map ? '' : 'nomap'}" data-act="planGo" data-site="${sid}" data-id="${x.id}">${esc(x.name)}</button>`).join('');
+  const ctrls = fine ? `<div class="pv-ui pv-tools">
+      <button class="pv-b" data-act="pvZoom" data-d="-1" title="Verkleinern ( − )">−</button><span class="pv-val" id="pvZ">100 %</span><button class="pv-b" data-act="pvZoom" data-d="1" title="Vergrößern ( + )">＋</button>
+      <span class="pv-sep"></span>
+      <button class="pv-b" data-act="pvRot" data-d="-15" title="Nach links drehen ( Q )">⟲</button><span class="pv-val" id="pvR">0°</span><button class="pv-b" data-act="pvRot" data-d="15" title="Nach rechts drehen ( E )">⟳</button>
+      <span class="pv-sep"></span>
+      <button class="pv-b wide" data-act="pvNorth" title="Drehung auf 0° ( R )">⬆ Gerade</button><button class="pv-b wide" data-act="pvFit" title="Ganzen Plan zeigen ( 0 )">⤢ Ganz</button><button class="pv-b" data-act="pvKeys" title="Tastenkürzel ( ? )">?</button></div>`
+    : `<div class="pv-ui pv-fab"><button class="pv-round" data-act="pvNorth" aria-label="Drehung auf 0°"><span class="pv-compass" id="pvC">⬆</span></button><button class="pv-round" data-act="pvFit" aria-label="Ganzen Plan zeigen">⤢</button></div>`;
+  $app.innerHTML = `<div class="pv ${fine ? 'fine' : 'touch'}">
+    <header class="pv-ui pv-top">
+      <button class="pv-b" data-act="menuGo" data-href="#/o/${sid}" aria-label="Zurück" title="Zurück ( Esc )">‹</button>
+      <div class="pv-title"><b>${esc(f.name)}</b><span>${esc(sname(st))}</span></div>
+      ${ph ? `<button class="pv-b" data-act="planMenu" data-site="${sid}" data-id="${f.id}" aria-label="Plan ändern" title="Plan ersetzen oder entfernen">⋯</button>` : ''}
+    </header>
+    <nav class="pv-ui pv-tabs">${tabs}</nav>
+    ${ph ? `<div class="pv-stage" id="pvStage"><div class="pv-world"><img id="pvImg" src="${planUrl}" width="${f.map.w}" height="${f.map.h}" alt="Plan ${esc(f.name)}" draggable="false"></div></div>
+      ${ctrls}
+      <p class="pv-ui pv-hint" id="pvHint">${fine ? 'Ziehen: verschieben · Mausrad: zoomen · Umschalt + Rad oder rechte Maustaste ziehen: drehen' : 'Ein Finger: verschieben<br>Zwei Finger: zoomen und drehen<br>Doppeltippen: näher'}</p>`
+    : `<div class="pv-empty"><p>Für <b>${esc(f.name)}</b> gibt es noch keinen Plan.</p><p class="muted small">Ein Foto oder Bild des Grundrisses wählen. Es bleibt nur auf diesem Gerät gespeichert und wird mit Terminen mitgeschickt.</p>
+      ${planUpBtn(sid, f.id, '🖼 Bild für den Plan wählen', 'big-btn primary')}</div>`}
+  </div>`;
+  document.documentElement.classList.add('pv-open');
+  if (!ph) return;
+  const stage = document.getElementById('pvStage'), zEl = document.getElementById('pvZ'), rEl = document.getElementById('pvR'), cEl = document.getElementById('pvC');
+  planCtl = mountPlan(stage, document.getElementById('pvImg'), {
+    w: f.map.w, h: f.map.h, rot: +settings.get('planRot:' + f.id, 0) || 0,
+    onRot: (r) => settings.set('planRot:' + f.id, Math.round(r * 10) / 10),
+    onChange: (v, fitS) => {
+      if (zEl) zEl.textContent = `${Math.round(v.s / fitS * 100)} %`;
+      if (rEl) rEl.textContent = `${Math.round(v.r)}°`;
+      if (cEl) { cEl.style.transform = `rotate(${v.r}deg)`; cEl.parentElement.classList.toggle('off', Math.abs(v.r) < 0.5); }
+    },
+  });
+  setTimeout(() => document.getElementById('pvHint')?.classList.add('gone'), 4000);
+}
+async function planUpload(input) {
+  const [sid, fid] = input.dataset.planup.split(':'), file = input.files?.[0];
+  input.value = '';
+  if (!file) return;
+  closeJump();
+  snack('Plan wird gespeichert …');
+  let img;
+  try { img = await preparePlanImage(file); } catch { return snack('Dieses Bild lässt sich nicht öffnen. Bitte ein JPG oder PNG wählen.'); }
+  const ph = { id: uid(), blob: img.blob, planSite: sid, planEtage: fid };
+  await db.put('photos', ph);
+  await flChain; await ckChain;
+  const st = await db.get('sites', sid), f = st?.etagen?.find(x => x.id === fid); if (!f) return;
+  const old = f.map?.photoId;
+  f.map = { photoId: ph.id, w: img.w, h: img.h, name: file.name || '' };
+  await db.put('sites', st);
+  if (old) await db.del('photos', old);
+  settings.set('planRot:' + fid, 0);
+  document.getElementById('snack').classList.remove('show');
+  const h = `#/plan/${sid}/${fid}`;
+  if (location.hash === h) return route();
+  location.hash = h;
+}
+async function planRemove(sid, fid) {
+  const st = await db.get('sites', sid), f = st?.etagen?.find(x => x.id === fid); if (!f?.map) return;
+  const old = f.map.photoId; delete f.map; await db.put('sites', st);
+  if (old) await db.del('photos', old);
+  closeJump(); route();
+}
+function planMenu(sid, fid, confirm = false) {
+  const sheet = document.getElementById('sheet');
+  sheet.innerHTML = `<div class="sheet-inner">
+    <div class="sheet-grab"></div>
+    <h2 class="sheet-h">Plan dieser Etage</h2>
+    ${planUpBtn(sid, fid, '🖼 Anderes Bild wählen', 'big-btn')}
+    ${confirm ? `<p class="muted">Der Plan wird von diesem Gerät gelöscht. Die Etage und ihre Türen bleiben.</p><button class="big-btn danger solid" data-act="planDel" data-site="${sid}" data-id="${fid}">🗑 Plan endgültig entfernen</button>`
+      : `<button class="big-btn danger-row" data-act="planDelAsk" data-site="${sid}" data-id="${fid}">🗑 Plan entfernen</button>`}
+    <button class="big-btn" data-act="cancelDel">Abbrechen</button>
+  </div>`;
+  sheet.classList.add('show');
+}
+function planKeys() {
+  const K = [['Ziehen', 'Plan verschieben'], ['Mausrad', 'zoomen (an der Mausposition)'], ['Umschalt + Rad', 'drehen'], ['Rechte Maustaste ziehen', 'drehen'], ['Doppelklick', 'näher (mit Umschalt: weiter weg)'],
+    ['+ / −', 'zoomen'], ['Q / E', 'um 15° drehen (mit Umschalt: 1°)'], ['R', 'gerade (0°)'], ['0 / F', 'ganzen Plan zeigen'], ['← ↑ → ↓', 'verschieben'], ['Bild ↑ / Bild ↓', 'Etage höher / tiefer'], ['Esc', 'zurück zum Objekt']];
+  const sheet = document.getElementById('sheet');
+  sheet.innerHTML = `<div class="sheet-inner keys"><div class="sheet-grab"></div><h2 class="sheet-h">Plan: Maus und Tasten</h2>
+    <table class="keys-t">${K.map(([k, d]) => `<tr><td>${esc(k)}</td><td>${esc(d)}</td></tr>`).join('')}</table>
+    <button class="big-btn" data-act="cancelDel">Schließen</button></div>`;
+  sheet.classList.add('show');
+}
+window.addEventListener('keydown', (e) => {
+  if (!planCur || e.ctrlKey || e.metaKey || e.altKey) return;
+  const t = e.target; if (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA') return;
+  if (document.getElementById('sheet').classList.contains('show')) return;
+  const k = e.key, c = planCtl, step = e.shiftKey ? 1 : 15;
+  const floor = async (d) => { const st = await db.get('sites', planCur.sid), fl = floorsOf(st), i = fl.findIndex(f => f.id === planCur.fid), n = fl[i + d]; if (n) location.replace(`#/plan/${planCur.sid}/${n.id}`); };
+  const act = {
+    Escape: () => (location.hash = `#/o/${planCur.sid}`), PageUp: () => floor(1), PageDown: () => floor(-1), '?': planKeys,
+    ...(c ? { '+': c.zoomIn, '=': c.zoomIn, '-': c.zoomOut, '_': c.zoomOut, q: () => c.rotate(-step), Q: () => c.rotate(-step), e: () => c.rotate(step), E: () => c.rotate(step),
+      r: () => c.setRot(0), R: () => c.setRot(0), 0: c.fit, f: c.fit, F: c.fit,
+      ArrowLeft: () => c.pan(80, 0), ArrowRight: () => c.pan(-80, 0), ArrowUp: () => c.pan(0, 80), ArrowDown: () => c.pan(0, -80) } : {}),
+  }[k];
+  if (!act) return;
+  e.preventDefault(); e.stopImmediatePropagation(); act();
+}, true);
 
 // ---------- Druckansicht (wie das Papierformular) ----------
 async function renderPrint(ids, backHash) {
@@ -2635,7 +2764,16 @@ document.addEventListener('click', async (e) => {
     case 'flAddAsk': { const name = (document.querySelector('.fl-new')?.value) || ''; if (name) return flUpdate(b.dataset.site, (st) => addFloor(st, name));
       const box = b.closest('.chips'); box.insertAdjacentHTML('afterend', `<div class="fl-row"><input class="field sm fl-new" placeholder="Name der Etage" autocomplete="off"><button class="mini-x" data-act="flAddAsk" data-site="${b.dataset.site}">＋</button></div>`); box.nextElementSibling.querySelector('input').focus(); return; }
     case 'flMove': return flUpdate(b.dataset.site, (st) => { const fl = floorsOf(st); const i = fl.findIndex(f => f.id === b.dataset.id), j = i + (+b.dataset.d); if (j < 0 || j >= fl.length) return; [fl[i], fl[j]] = [fl[j], fl[i]]; fl.forEach((f, k) => { f.order = k; }); st.etagen = fl; });
-    case 'flDel': return flUpdate(b.dataset.site, (st) => { st.etagen = floorsOf(st).filter(f => f.id !== b.dataset.id); });
+    case 'flDel': return flUpdate(b.dataset.site, (st) => { const f = floorsOf(st).find(x => x.id === b.dataset.id); if (f?.map?.photoId) db.del('photos', f.map.photoId); st.etagen = floorsOf(st).filter(x => x.id !== b.dataset.id); });
+    case 'planGo': closeJump(); return location.hash.startsWith('#/plan/') ? location.replace(`#/plan/${b.dataset.site}/${b.dataset.id}`) : (location.hash = `#/plan/${b.dataset.site}/${b.dataset.id}`);
+    case 'planMenu': return planMenu(b.dataset.site, b.dataset.id);
+    case 'planDelAsk': return planMenu(b.dataset.site, b.dataset.id, true);
+    case 'planDel': return planRemove(b.dataset.site, b.dataset.id);
+    case 'pvZoom': return +b.dataset.d > 0 ? planCtl?.zoomIn() : planCtl?.zoomOut();
+    case 'pvRot': return planCtl?.rotate(+b.dataset.d);
+    case 'pvNorth': return planCtl?.setRot(0);
+    case 'pvFit': return planCtl?.fit();
+    case 'pvKeys': return planKeys();
     case 'learnPick': return learnPick(b);
     case 'todoAdd': return todoAddSheet(b.dataset.ref, b.dataset.label, b.dataset.gid || null);
     case 'todoSave': return todoSave(b);
@@ -2867,6 +3005,7 @@ document.addEventListener('change', (e) => {
   if (e.target.dataset?.flt !== undefined) { const F = getDF(); F[e.target.dataset.flt] = e.target.value; if (e.target.dataset.flt === 'site') { F.kunde = ''; F.etage = ''; } setDF(F); selDoors = new Set(); return rerenderDL(); }
   if (e.target.id === 'ndSite' || e.target.id === 'ndKunde') e.target.dispatchEvent(new Event('input', { bubbles: true }));
   if (e.target.dataset?.sortSel !== undefined) { settings.set('visitSort', { k: e.target.value, d: 1 }); return renderVisit(); }
+  if (e.target.dataset?.planup) return planUpload(e.target);
   const f = e.target.dataset?.photoFor;
   if (f && e.target.files?.[0]) { addPhoto(f, e.target.files[0]); e.target.value = ''; return; }
   if (e.target.type === 'checkbox') e.target.dispatchEvent(new Event('input', { bubbles: true })); });

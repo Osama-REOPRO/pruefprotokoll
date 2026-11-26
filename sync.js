@@ -29,6 +29,8 @@ export async function exportVisit(visitId) {
   history.forEach(i => { custIds.add(i.customerId); siteIds.add(i.siteId); });
   const sites = await pick('sites', siteIds);
   sites.forEach(s => custIds.add(s.customerId));
+  // Etagenpläne der Objekte mitschicken
+  sites.forEach(s => (s.etagen || []).forEach(f => f.map?.photoId && photoIds.add(f.map.photoId)));
   const photos = await Promise.all((await pick('photos', photoIds)).map(async ({ blob, ...rest }) => ({ ...rest, data: blob ? await blobToDataURL(blob) : null })));
   return {
     format: FORMAT, version: 1, exportedAt: new Date().toISOString(),

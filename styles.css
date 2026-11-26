@@ -480,3 +480,40 @@ details.fold[open] > summary { margin-bottom: 10px; }
 .plan-soon { margin: 10px 0 0; }
 button.link-ish { background: none; border: 0; padding: 6px 0; font: inherit; cursor: pointer; }
 a.link { color: var(--ink); font-weight: 700; text-decoration: underline; text-decoration-color: var(--line); text-underline-offset: 3px; }
+
+/* Etagenplan */
+html.pv-open, html.pv-open body { overflow: hidden; overscroll-behavior: none; }
+.pv { position: fixed; inset: 0; z-index: 35; background: #2b3038; color: #fff; display: flex; flex-direction: column; user-select: none; -webkit-user-select: none; }
+.pv-top { display: flex; align-items: center; gap: 10px; padding: calc(env(safe-area-inset-top) + 8px) 10px 8px; background: rgba(20,24,30,.92); z-index: 2; }
+.pv-title { flex: 1; min-width: 0; display: flex; flex-direction: column; line-height: 1.2; }
+.pv-title b { font-size: 1.1em; } .pv-title span { font-size: .8em; opacity: .7; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.pv-b { min-width: 44px; height: 44px; border-radius: 10px; border: 0; background: rgba(255,255,255,.14); color: #fff; font-size: 1.15em; font-weight: 700; padding: 0 10px; cursor: pointer; }
+.pv-b:hover { background: rgba(255,255,255,.24); }
+.pv-b.wide { font-size: .9em; }
+.pv-tabs { display: flex; gap: 6px; overflow-x: auto; padding: 6px 10px 8px; background: rgba(20,24,30,.92); z-index: 2; scrollbar-width: none; }
+.pv-tab { flex: none; border: 1px solid rgba(255,255,255,.25); background: none; color: #fff; border-radius: 999px; padding: 8px 14px; font-weight: 700; min-height: 40px; cursor: pointer; }
+.pv-tab.on { background: #fff; color: #14181e; border-color: #fff; }
+.pv-tab.nomap { opacity: .55; font-weight: 500; }
+.pv-stage { position: relative; flex: 1; overflow: hidden; touch-action: none; cursor: grab; background: #3a4049; }
+.pv-stage.dragging { cursor: grabbing; } .pv-stage.rotating { cursor: alias; }
+.pv-world { position: absolute; left: 0; top: 0; transform-origin: 0 0; will-change: transform; }
+.pv-world img { display: block; max-width: none; background: #fff; box-shadow: 0 0 0 1px rgba(0,0,0,.3), 0 6px 30px rgba(0,0,0,.4); pointer-events: none; image-rendering: auto; }
+.pv-fab { position: absolute; right: 14px; bottom: calc(env(safe-area-inset-bottom) + 18px); display: flex; flex-direction: column; gap: 12px; z-index: 2; }
+.pv-round { width: 56px; height: 56px; border-radius: 50%; border: 0; background: rgba(20,24,30,.85); color: #fff; font-size: 1.5em; box-shadow: 0 2px 10px rgba(0,0,0,.4); }
+.pv-round.off { opacity: .55; }
+.pv-compass { display: inline-block; transition: none; }
+.pv-tools { position: absolute; left: 50%; bottom: 18px; transform: translateX(-50%); display: flex; align-items: center; gap: 4px; padding: 6px; border-radius: 12px; background: rgba(20,24,30,.9); box-shadow: 0 4px 18px rgba(0,0,0,.4); z-index: 2; white-space: nowrap; }
+.pv-tools .pv-b { height: 38px; min-width: 38px; background: none; }
+.pv-tools .pv-b:hover { background: rgba(255,255,255,.16); }
+.pv-val { min-width: 56px; text-align: center; font-variant-numeric: tabular-nums; font-size: .9em; opacity: .9; }
+.pv-sep { width: 1px; height: 24px; background: rgba(255,255,255,.2); margin: 0 4px; }
+.pv-hint { position: absolute; left: 50%; top: calc(env(safe-area-inset-top) + 130px); transform: translateX(-50%); max-width: calc(100% - 32px); text-align: center; margin: 0; padding: 8px 14px; border-radius: 10px; background: rgba(20,24,30,.85); font-size: .85em; pointer-events: none; transition: opacity .6s; z-index: 2; }
+.pv.fine .pv-hint { top: auto; bottom: 76px; }
+.pv-hint.gone { opacity: 0; }
+.pv-empty { flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: center; text-align: center; padding: 24px; gap: 4px; }
+.pv-empty .muted { color: rgba(255,255,255,.7); max-width: 420px; }
+.pv-empty .big-btn { max-width: 360px; margin-top: 12px; }
+.mini-x.plan-b { width: auto; min-width: 44px; border-radius: 22px; padding: 0 10px; font-size: .85em; font-weight: 600; white-space: nowrap; cursor: pointer; display: inline-flex; align-items: center; justify-content: center; }
+.mini-x.plan-b.on { font-size: 1.1em; border-color: var(--brand); }
+.plan-up { cursor: pointer; }
+.ent-plans .chip { margin: 0; }
