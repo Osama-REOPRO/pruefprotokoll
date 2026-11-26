@@ -369,3 +369,21 @@ label.big-btn { display: flex; align-items: center; justify-content: center; tex
 .sort-bar { display: flex; align-items: center; gap: 8px; margin: 4px 0 10px; }
 .sort-bar select.field { flex: 1; min-height: 44px; }
 .sort-bar .sort-dir { flex: none; font-size: 1.2em; border: 2px solid var(--line); background: var(--card); color: var(--ink); }
+
+/* Suche und doppelte Türen */
+.search-box { position: relative; margin: 0 0 10px; }
+.search-box .field { width: 100%; padding-right: 40px; }
+.search-x { position: absolute; right: 6px; top: 50%; transform: translateY(-50%); width: 32px; height: 32px; border: 0; border-radius: 50%; background: var(--line); color: var(--ink); font-size: 1.1em; line-height: 1; }
+.nr-tag { display: inline-block; padding: 0 6px; border-radius: 6px; background: var(--brand); color: var(--brand-ink); font-size: .85em; }
+.dup-pill { margin-right: 4px; }
+.dup-warn:empty { display: none; }
+.dup-box { border: 2px solid var(--bad, #c62828); background: color-mix(in srgb, #c62828 8%, var(--card)); border-radius: 12px; padding: 10px 12px; margin: 0 0 12px; }
+.dup-box.info { border-color: var(--brand); background: color-mix(in srgb, var(--brand) 7%, var(--card)); }
+.dup-box p { margin: 0 0 8px; }
+.dup-acts { display: flex; flex-wrap: wrap; gap: 8px; }
+.dup-b { min-height: 44px; padding: 0 14px; border-radius: 10px; border: 2px solid var(--line); background: var(--card); color: var(--ink); font-weight: 700; }
+.dup-b.primary { background: var(--brand); border-color: var(--brand); color: var(--brand-ink); }
+.dup-b.danger { color: #c62828; border-color: #e0a0a0; }
+.field.dup { border-color: var(--bad); box-shadow: 0 0 0 2px var(--bad-bg); }
+.dup-inline { display: block; margin-top: 4px; border: 0; background: none; padding: 2px 0; color: var(--bad); font-weight: 700; font-size: .9em; text-align: left; }
+input[type=search]::-webkit-search-cancel-button { display: none; }

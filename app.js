@@ -180,7 +180,7 @@ function renderAllDesk(target) {
   finally { var parts = COLLECT; COLLECT = null; step = keep; }
   $app.innerHTML = `${topBar()}<main class="step dk-all">${parts.join('')}</main>`;
   deskShown = insp.id;
-  hydrateThumbs(); initSigPad('ag'); initSigPad('an');
+  hydrateThumbs(); initSigPad('ag'); initSigPad('an'); checkDupes();
   kbIdx = -1;
   refreshChrome();
   if (target != null) scrollToSec(target);
@@ -269,6 +269,7 @@ async function routeInner() {
     insp = null; tpl = null;
     releaseAwake();
     settings.set('last', null);
+    if (visit?.id !== parts[1]) visitQuery = ''; // Suche gilt nur für diesen Termin
     visit = await db.get('visits', parts[1]);
     if (!visit) { location.hash = '#/'; return; }
     const migrate = !Array.isArray(visit.pairs);
@@ -306,6 +307,46 @@ window.addEventListener('hashchange', route);
 const go = (s) => { location.hash = `#/p/${insp.id}/${s}`; };
 
 // ---------- Startseite ----------
+// ---------- Suchen (Tür-Nr. zuerst) und doppelte Türen erkennen ----------
+// Nummern vergleichen ohne Leerzeichen, Punkte, Striche: „1.UG 14“ = „1ug14“
+const normNr = (s) => String(s || '').toLowerCase().replace(/[\s.\-_/]+/g, '');
+const normTxt = (s) => String(s || '').toLowerCase().normalize('NFKD').replace(/[\u0300-\u036f]/g, '').replace(/ß/g, 'ss');
+// Treffer-Punkte: Nummer zählt am meisten, dann Standort usw.; 0 = kein Treffer
+function matchScore(i, q) {
+  const nq = normNr(q), toks = normTxt(q).split(/\s+/).filter(Boolean);
+  if (!toks.length) return 1;
+  const u = unitOf(i), h = i.header || {}, g = h.tor || h.grund || {}, nr = normNr(u.nr);
+  let sc = 0;
+  if (nr && nq) sc = nr === nq ? 100 : nr.startsWith(nq) ? 60 : nr.includes(nq) ? 40 : 0;
+  const hay = normTxt([u.nr, u.standort, u.typ, g.hersteller, g.fabrNr, u.noun, h.objekt?.name, h.objekt?.strasse, h.kunde?.name].join(' '));
+  if (toks.every(t => hay.includes(t))) sc = Math.max(sc, 10 + (normTxt(u.standort).includes(toks[0]) ? 5 : 0));
+  return sc;
+}
+const kindOf = (i) => TEMPLATES[i.templateId]?.kind;
+// Gleiche Nummer, gleiche Art, gleicher Kunde + Objekt im selben Termin = doppelt
+const dupKey = (i) => { const n = normNr(unitOf(i).nr); return n ? `${i.visitId || '-'}|${i.siteId || ''}|${kindOf(i)}|${n}` : null; };
+function dupSet(items) {
+  const c = new Map(); items.forEach(i => { const k = dupKey(i); if (k) c.set(k, (c.get(k) || 0) + 1); });
+  return new Set(items.filter(i => c.get(dupKey(i)) > 1).map(i => i.id));
+}
+const dupPill = '<span class="pill red dup-pill" title="Diese Nummer gibt es in diesem Termin mehrmals">doppelt</span>';
+const searchBox = (id, q, ph) => `<div class="search-box"><input class="field" type="search" id="${id}" value="${esc(q)}" placeholder="${ph}" autocomplete="off" enterkeyhint="search">${q ? `<button class="search-x" data-act="clearSearch" data-for="${id}" aria-label="Suche leeren">×</button>` : ''}</div>`;
+let homeQuery = '', visitQuery = '';
+// Suchfeld neu zeichnen, ohne dass der Cursor springt
+async function rerenderKeepFocus(id, fn) {
+  const el = document.getElementById(id), pos = el?.selectionStart;
+  await fn();
+  const n = document.getElementById(id);
+  if (n && el) { n.focus(); try { n.setSelectionRange(pos, pos); } catch {} }
+}
+// Treffer über alle Termine (Übersicht)
+function searchResults(all, visits, q) {
+  const vById = new Map(visits.map(v => [v.id, v]));
+  const hits = all.map(i => [i, matchScore(i, q)]).filter(([, sc]) => sc > 0)
+    .sort((a, b) => b[1] - a[1] || dateKey(b[0].datum).localeCompare(dateKey(a[0].datum))).slice(0, 60).map(([i]) => i);
+  return { hits, vOf: (i) => vById.get(i.visitId) };
+}
+
 async function renderHome() {
   const all = (await db.all('inspections')).sort((a, b) => b.updatedAt.localeCompare(a.updatedAt));
   const visits = await db.all('visits');
@@ -316,6 +357,7 @@ async function renderHome() {
   const single = all.filter(i => !i.visitId);
   const resume = all.find(i => i.status !== 'done' && Object.keys(i.answers || {}).some(k => i.answers[k].s));
   if (DESK) return renderHomeDesk({ open, done, single, resume, all, visits });
+  const sr = homeQuery.trim() ? searchResults(all, visits, homeQuery) : null;
 
   $app.innerHTML = `
     <header class="bar">
@@ -333,11 +375,19 @@ async function renderHome() {
           <span class="muted">${esc(inspTitle(resume))}</span>
           ${progressMini(resume)}
         </button>` : ''}
-      <button class="big-btn primary" data-act="newVisit">＋ Neuer Termin</button>
+      ${all.length ? searchBox('homeSearch', homeQuery, 'Tür suchen: Tür-Nr., Standort, Objekt …') : ''}
+      ${sr ? `<section class="card"><h2>Treffer <span class="muted small">${sr.hits.length}</span></h2>${sr.hits.map(i => {
+        const u = unitOf(i), v = sr.vOf(i), [cls, label] = itemState(i);
+        return `<div class="row-wrap"><button class="list-row" data-act="open" data-id="${i.id}"><span><strong>${u.nr ? `<span class="nr-tag">${esc(u.nr)}</span> ` : ''}${esc(u.standort || `${u.noun} ohne Standort`)}</strong><br>
+          <span class="muted small">${esc(u.noun)} · ${esc(inspTitle(i))}${v ? ` · Termin ${esc(v.datum || '')}` : i.datum ? ' · ' + esc(i.datum) : ''}</span></span>
+          <span class="pill ${cls === 'maengel' ? 'red' : cls === 'fertig' ? 'green' : ''}">${esc(label)}</span></button></div>`;
+      }).join('') || '<p class="muted">Nichts gefunden.</p>'}</section>` : ''}
+      ${sr ? '' : `<button class="big-btn primary" data-act="newVisit">＋ Neuer Termin</button>
       <label class="big-btn recv-btn">⇅ Termin empfangen (Datei öffnen)<input type="file" accept=".json,application/json" data-import hidden></label>
       ${open.length ? `<section class="card"><h2>Termine</h2>${open.map(visitRow).join('')}</section>` : ''}
       ${done.length ? `<section class="card"><h2>Erledigt</h2>${done.slice(0, 30).map(visitRow).join('')}</section>` : ''}
       ${single.length ? `<section class="card"><h2>Einzelne Prüfungen</h2>${single.slice(0, 30).map(listRow).join('')}</section>` : ''}
+      `}
       ${!all.length && !visits.length ? `<p class="empty">Noch keine Termine. Im Büro einen Termin anlegen: Kunde, Objekt und die Tore eintragen. Vor Ort dann nur noch die Checkliste.<br><br>Alles wird nur auf diesem Handy gespeichert und funktioniert auch ohne Netz.</p>` : ''}
     </main>`;
 }
@@ -557,11 +607,66 @@ function renderHeader() {
           <button class="big-btn primary" data-act="copyAll">↺ Alles wie letztes Mal</button>
         </section>
         <p class="hint">Oder Daten unten prüfen und dann Abschnitt für Abschnitt bestätigen.</p>` : (insp.gateId ? '<p class="hint">Daten vom letzten Mal übernommen. Nur prüfen, was sich geändert hat.</p>' : '')}
+      <div id="dupWarn" class="dup-warn"></div>
       ${insp.visitId ? `<button class="hint pair-line" data-act="movePairAsk" data-id="${insp.id}"><span>Kunde und Objekt kommen vom Termin:</span> <b>${esc(pairLabel({ objekt: insp.header.objekt, kunde: insp.header.kunde }))}</b> <span class="link-ish">ändern ›</span></button>` : ''}
       ${groups}
       ${checkBtn()}
     </main>
     ${bottomBar('Weiter ›')}`)) return;
+  checkDupes();
+}
+// Gibt es diese Nummer schon? Im selben Termin = doppelt; an diesem Objekt bekannt = verknüpfen anbieten
+const gateNr = (g) => { const u = TEMPLATES[g.templateId]?.unit; return u ? g.data?.[u.group]?.[u.nr] : ''; };
+async function findKnownGate(i, inspections) {
+  const n = normNr(unitOf(i).nr);
+  if (!n || !i.siteId) return null;
+  const g = (await db.all('gates')).find(g => g.id !== i.gateId && g.siteId === i.siteId && TEMPLATES[g.templateId]?.kind === kindOf(i) && normNr(gateNr(g)) === n);
+  if (!g) return null;
+  // schon als eigene Zeile in diesem Termin? Dann ist es der Fall „doppelt im Termin“
+  return inspections.some(x => x.id !== i.id && i.visitId && x.visitId === i.visitId && x.gateId === g.id) ? null : g;
+}
+let dupTimer = null;
+// Hinweis auch direkt am Nummernfeld (der Kasten oben ist beim Tippen evtl. nicht im Blick)
+function markNrField(kind) {
+  const inp = document.querySelector(`input[data-h="${tpl.unit.group}.${tpl.unit.nr}"]`);
+  if (!inp) return;
+  inp.classList.toggle('dup', kind === 'twin');
+  let tip = inp.parentElement.querySelector('.dup-inline');
+  if (!kind) { tip?.remove(); return; }
+  if (!tip) { tip = document.createElement('button'); tip.type = 'button'; tip.className = 'dup-inline'; inp.after(tip); }
+  tip.dataset.act = 'toDupWarn';
+  tip.textContent = kind === 'twin' ? '⚠ Diese Nummer gibt es in diesem Termin schon ›' : 'ⓘ An diesem Objekt schon bekannt ›';
+}
+async function checkDupes() {
+  const box = document.getElementById('dupWarn');
+  if (!box || !insp) return;
+  const u = unitOf(insp), n = normNr(u.nr);
+  if (!n) { box.innerHTML = ''; markNrField(null); return; }
+  const inspections = await db.all('inspections');
+  const twin = insp.visitId && inspections.find(i => i.id !== insp.id && i.visitId === insp.visitId && i.siteId === insp.siteId && kindOf(i) === kindOf(insp) && normNr(unitOf(i).nr) === n);
+  if (twin) {
+    const tu = unitOf(twin);
+    box.innerHTML = `<div class="dup-box"><p><b>⚠ ${esc(u.nrLabel)} ${esc(u.nr)} gibt es in diesem Termin schon</b> (${esc(tu.standort || `${tu.noun} ohne Standort`)}). Jede ${esc(u.noun)} sollte nur einmal im Termin stehen.</p>
+      <div class="dup-acts"><button class="dup-b" data-act="openItem" data-id="${twin.id}">Zur vorhandenen ${esc(u.noun)} ›</button><button class="dup-b danger" data-act="askDel" data-kind="inspection" data-id="${insp.id}">Diese hier löschen</button></div></div>`;
+    markNrField('twin');
+    return;
+  }
+  const g = await findKnownGate(insp, inspections);
+  box.innerHTML = g ? `<div class="dup-box info"><p><b>${esc(u.nrLabel)} ${esc(u.nr)} ist an diesem Objekt schon bekannt</b> (${esc(g.standort || '')}${g.lastInspected ? `, zuletzt geprüft ${esc(g.lastInspected)}` : ''}). Übernehmen, damit es keine doppelte ${esc(u.noun)} gibt. Die letzte Prüfung steht dann zum Vergleich bereit.</p>
+    <div class="dup-acts"><button class="dup-b primary" data-act="linkGate" data-id="${g.id}">Als diese ${esc(u.noun)} übernehmen</button></div></div>` : '';
+  markNrField(g ? 'known' : null);
+}
+async function linkGate(gid) {
+  const pre = await prefillFromGate(gid);
+  insp.gateId = gid;
+  for (const [k, val] of Object.entries(pre.header)) {
+    if (k === 'kunde' || k === 'objekt') continue;
+    const mine = Object.fromEntries(Object.entries(insp.header[k] || {}).filter(([, x]) => x !== '' && x != null));
+    insp.header[k] = { ...val, ...mine };
+  }
+  if (!insp.prev && pre.prev) Object.assign(insp, { prev: pre.prev, prevDatum: pre.prevDatum, prevRemarks: pre.prevRemarks });
+  buzz(); await saveNow(); renderStepKeepScroll();
+  snack(`Übernommen${pre.prevDatum ? `: letzte Prüfung vom ${pre.prevDatum} zum Vergleich` : ''}.`);
 }
 
 // ---------- Prüfabschnitt ----------
@@ -871,6 +976,11 @@ async function finish() {
 // Kunde, Objekt und Tor als eigene Datensätze ablegen, damit sie beim nächsten Mal vorbelegt sind
 async function upsertMasterData() {
   const h = insp.header;
+  // Neue Tür mit einer Nummer, die es an diesem Objekt schon gibt: mit der vorhandenen verknüpfen statt doppelt anlegen
+  if (!insp.gateId || !(await db.get('gates', insp.gateId))) {
+    const g = await findKnownGate(insp, await db.all('inspections'));
+    if (g) insp.gateId = g.id;
+  }
   insp.customerId ||= uid(); insp.siteId ||= uid(); insp.gateId ||= uid();
   await db.put('customers', { ...(await db.get('customers', insp.customerId) || {}), id: insp.customerId, ...h.kunde });
   await db.put('sites', { ...(await db.get('sites', insp.siteId) || {}), id: insp.siteId, customerId: insp.customerId, ...h.objekt });
@@ -1174,13 +1284,13 @@ function sortBarHTML() {
     <button class="icon-btn sm sort-dir" data-act="sortDir" aria-label="${d === 1 ? 'Aufsteigend' : 'Absteigend'}" title="Richtung umkehren">${d === 1 ? '↑' : '↓'}</button></div>`;
 }
 
-function itemRow(i) {
+function itemRow(i, dup = false) {
   const [cls, label] = itemState(i);
   const t = unitOf(i);
   return `<div class="gate-line"><button class="gate-row st-${cls}" data-act="openItem" data-id="${i.id}">
     <span class="gate-ico">${{ fertig: '✓', maengel: '✗', arbeit: '…', offen: '' }[cls]}</span>
     <span class="gate-txt"><b>${esc(t.standort || `${t.noun} ohne Standort`)}</b><br><span class="muted small"><span class="kind">${esc(t.noun)}</span> ${esc(unitSub(t))}</span></span>
-    <span class="pill ${cls === 'maengel' ? 'red' : cls === 'fertig' ? 'green' : ''}">${label}</span></button>
+    ${dup ? dupPill : ''}<span class="pill ${cls === 'maengel' ? 'red' : cls === 'fertig' ? 'green' : ''}">${label}</span></button>
     <button class="dup-btn" data-act="menu" data-for="item" data-id="${i.id}" aria-label="Mehr zu ${esc(t.noun)}">⋯</button></div>`;
 }
 async function renderVisit() {
@@ -1191,12 +1301,17 @@ async function renderVisit() {
   const items = showAll || !multi ? all : all.filter(i => pairOfItem(v, i).id === v.filter);
   const done = items.filter(i => i.status === 'done').length;
   const one = !multi ? v.pairs[0] : (showAll ? null : pairById(v, v.filter));
-  const list = !items.length ? '<p class="empty">Noch keine Tore oder Türen in diesem Termin.</p>'
+  const dups = dupSet(all);
+  const q = visitQuery.trim();
+  const shown = (list) => q ? list.filter(i => matchScore(i, q) > 0) : list;
+  const rowM = (i) => itemRow(i, dups.has(i.id));
+  const list = q ? (() => { const hits = sortItems(shown(items), v).sort((a, b) => matchScore(b[0], q) - matchScore(a[0], q)); return hits.map(([i]) => rowM(i)).join('') || '<p class="empty">Keine Tür und kein Tor passt zur Suche.</p>'; })()
+    : !items.length ? '<p class="empty">Noch keine Tore oder Türen in diesem Termin.</p>'
     : showAll ? v.pairs.map(p => {
         const its = all.filter(i => pairOfItem(v, i).id === p.id);
-        return `<h3 class="pair-h"><button class="link" data-act="filterPair" data-id="${p.id}">${esc(pairLabel(p))} ›</button></h3>${sortItems(its, v).map(([i]) => itemRow(i)).join('') || '<p class="muted small pair-empty">Noch keine Tore oder Türen.</p>'}`;
+        return `<h3 class="pair-h"><button class="link" data-act="filterPair" data-id="${p.id}">${esc(pairLabel(p))} ›</button></h3>${sortItems(its, v).map(([i]) => rowM(i)).join('') || '<p class="muted small pair-empty">Noch keine Tore oder Türen.</p>'}`;
       }).join('')
-    : sortItems(items, v).map(([i]) => itemRow(i)).join('');
+    : sortItems(items, v).map(([i]) => rowM(i)).join('');
   $app.innerHTML = `
     <header class="bar">
       <button class="icon-btn" data-act="toHome" aria-label="Übersicht">‹</button>
@@ -1211,7 +1326,8 @@ async function renderVisit() {
         <div class="vprog"><span class="mini-progress"><span style="width:${items.length ? Math.round(done / items.length * 100) : 0}%"></span></span>
         <b>${done} von ${items.length} fertig</b></div>
       </section>
-      ${items.length > 1 ? sortBarHTML() : ''}
+      ${items.length > 1 ? searchBox('visitSearch', visitQuery, 'Suchen: Tür-Nr., Standort …') : ''}
+      ${items.length > 1 && !q ? sortBarHTML() : ''}
       ${list}
       <div class="two">
         <button class="big-btn" data-act="addNewGate" data-kind="tor">＋ Tor</button>
@@ -1529,6 +1645,9 @@ document.addEventListener('click', async (e) => {
     case 'checkNext': if (!autoDone(step)) setMarked(step, true); saveNow(); window.scrollTo(0, 0); return go(step + 1);
     case 'secCheck': { const i = +b.dataset.step; setMarked(i, !isMarked(i)); buzz(15); saveNow(); return refreshChrome(); }
     case 'set': return setAnswer(b.dataset.id, b.dataset.v);
+    case 'linkGate': return linkGate(b.dataset.id);
+    case 'toDupWarn': { const w = document.getElementById('dupWarn'); window.scrollTo({ top: w.getBoundingClientRect().top + scrollY - 70, behavior: 'smooth' }); return; }
+    case 'clearSearch': { if (b.dataset.for === 'homeSearch') { homeQuery = ''; await renderHome(); } else { visitQuery = ''; await renderVisit(); } return document.getElementById(b.dataset.for)?.focus(); }
     case 'sortBy': return setSort(b.dataset.k);
     case 'sortDir': { const s = getSort(); settings.set('visitSort', { k: s.k, d: -s.d }); return renderVisit(); }
     case 'clearSec': if (b.dataset.step) step = +b.dataset.step; return clearSection(step);
@@ -1658,11 +1777,14 @@ document.addEventListener('click', async (e) => {
 
 document.addEventListener('input', (e) => {
   const t = e.target;
+  if (t.id === 'homeSearch') { homeQuery = t.value; return rerenderKeepFocus(t.id, renderHome); }
+  if (t.id === 'visitSearch') { visitQuery = t.value; return rerenderKeepFocus(t.id, renderVisit); }
   if (!insp && visit && t.dataset.vh) { const [g, k] = t.dataset.vh.split('.'); const P = editPair(ensurePairs(visit)); (P[g] ||= {})[k] = t.value; refreshPairChip(); return saveVisitSoon(); }
   if (!insp && visit && t.dataset.vf) { visit[t.dataset.vf] = t.value; return saveVisitSoon(); }
   if (!insp) return;
   if (t.dataset.h) {
     const [g, k] = t.dataset.h.split('.'); (insp.header[g] ||= {})[k] = t.value;
+    if (g === tpl.unit.group && k === tpl.unit.nr) { clearTimeout(dupTimer); dupTimer = setTimeout(checkDupes, 350); }
     if (DESK) { // Titel oben und links mitführen, die Seite wird nicht neu aufgebaut
       const u = unitOf(insp), bt = document.querySelector('.bar .bar-title .t'), nt = document.querySelector('.dn-title b');
       if (bt?.firstChild) bt.firstChild.textContent = `${u.standort || u.noun} `;
@@ -1728,6 +1850,7 @@ document.addEventListener('keydown', (e) => {
   if (typing || sheetOpen) return;
   const k = e.key.length === 1 ? e.key.toLowerCase() : e.key;
   if (k === '?') { e.preventDefault(); return openKeys(); }
+  if (k === '/') { const sb = document.getElementById('visitSearch') || document.getElementById('homeSearch'); if (sb) { e.preventDefault(); sb.focus(); sb.select(); return; } }
   if (k === 'h' && !isGuide(location.hash)) { e.preventDefault(); return (location.hash = '#/handbuch'); }
   if (!insp || !tpl) return;
   const all = DESK && document.querySelector('main.dk-all');
@@ -1828,7 +1951,8 @@ async function renderNav() {
     </div>`;
 }
 
-function renderHomeDesk({ open, done, single, resume }) {
+function renderHomeDesk({ open, done, single, resume, all, visits }) {
+  const sr = homeQuery.trim() ? searchResults(all, visits, homeQuery) : null;
   const vtr = ({ v, items }) => {
     const d = items.filter(i => i.status === 'done').length;
     const m = items.filter(i => i.status === 'done' && hasDefects(i)).length;
@@ -1849,8 +1973,15 @@ function renderHomeDesk({ open, done, single, resume }) {
       <div class="bar-title">Übersicht</div>
       <button class="tb-btn primary" data-act="newVisit">＋ Neuer Termin</button>
       <label class="tb-btn">⇅ Termin empfangen<input type="file" accept=".json,application/json" data-import hidden></label>
+      ${all.length ? searchBox('homeSearch', homeQuery, 'Tür suchen: Tür-Nr., Standort, Objekt …  ( / )') : ''}
     </header>
     <main class="dk-page">
+      ${sr ? `<section class="dk-panel"><h2>Treffer <span class="muted">${sr.hits.length}</span></h2>${sr.hits.length ? `<table class="dt">
+        <thead><tr><th>Nr.</th><th>Tor / Tür</th><th>Standort / Lage</th><th>Typ</th><th>Objekt</th><th>Kunde</th><th>Termin</th><th>Status</th></tr></thead><tbody>
+        ${sr.hits.map(i => { const u = unitOf(i), v = sr.vOf(i), [cls, label] = itemState(i); return `<tr class="dt-click" data-act="open" data-id="${i.id}">
+          <td><b>${esc(u.nr || '')}</b></td><td><span class="kind-tag ${kindOf(i)}">${esc(u.noun)}</span></td><td><b>${esc(u.standort || '–')}</b></td><td>${esc(u.typ || '')}</td>
+          <td>${esc(inspTitle(i))}</td><td>${esc(i.header?.kunde?.name || '')}</td><td class="nw">${esc(v?.datum || i.datum || '')}</td>
+          <td><span class="pill ${cls === 'maengel' ? 'red' : cls === 'fertig' ? 'green' : ''}">${esc(label)}</span></td></tr>`; }).join('')}</tbody></table>` : '<p class="dk-empty">Nichts gefunden.</p>'}</section>` : `
       ${resume ? `<button class="dk-resume" data-act="open" data-id="${resume.id}"><span class="eyebrow">Weitermachen</span> <b>${esc(unitOf(resume).standort || inspTitle(resume))}</b> <span class="muted">${esc(inspTitle(resume))}</span> <span class="link-ish">Öffnen ›</span></button>` : ''}
       <section class="dk-panel">
         <h2>Offene Termine <span class="muted">${open.length}</span></h2>
@@ -1863,7 +1994,7 @@ function renderHomeDesk({ open, done, single, resume }) {
           <td class="nw">${esc(i.datum || '')}</td><td>${esc(u.noun)}</td><td><b>${esc(u.standort || '–')}</b></td><td>${esc(inspTitle(i))}</td>
           <td>${i.status === 'done' ? (m ? `<span class="pill red">${m} Mängel</span>` : '<span class="pill green">o.B.</span>') : '<span class="pill">offen</span>'}</td>
           <td class="acts"><button class="ib" data-act="menu" data-for="item" data-id="${i.id}" title="Mehr">⋯</button></td></tr>`; }).join('')}
-        </tbody></table></section>` : ''}
+        </tbody></table></section>` : ''}`}
     </main>`;
 }
 
@@ -1876,6 +2007,8 @@ async function renderVisitDesk() {
   const done = items.filter(i => i.status === 'done').length;
   const withDef = items.filter(i => i.status === 'done' && hasDefects(i)).length;
   const one = !multi ? v.pairs[0] : (showAll ? null : pairById(v, v.filter));
+  const dups = dupSet(all), q = visitQuery.trim();
+  const sorted = (list) => { const r = sortItems(q ? list.filter(i => matchScore(i, q) > 0) : list, v); return q ? r.sort((a, b) => matchScore(b[0], q) - matchScore(a[0], q)) : r; };
   const tr = (i, n) => {
     const [cls, label] = itemState(i);
     const u = unitOf(i), h = i.header || {}, g = h.tor || h.grund || {};
@@ -1883,7 +2016,7 @@ async function renderVisitDesk() {
     return `<tr class="dt-click st-${cls}" data-act="openItem" data-id="${i.id}">
       <td class="num muted">${n}</td>
       <td><span class="kind-tag ${TEMPLATES[i.templateId]?.kind}">${esc(u.noun)}</span></td>
-      <td><b>${esc(u.standort || '–')}</b></td>
+      <td><b>${esc(u.standort || '–')}</b>${dups.has(i.id) ? ' ' + dupPill : ''}</td>
       <td>${esc(u.nr || '')}</td>
       <td>${esc(u.typ || '')}</td>
       <td>${esc(g.hersteller || '')}</td>
@@ -1910,14 +2043,15 @@ async function renderVisitDesk() {
       ${multi ? pairChips(v, all) : ''}
       <div class="dk-sum">
         ${one ? `<span>${esc([one.kunde?.name, [one.objekt?.name, one.objekt?.strasse, one.objekt?.plzOrt].filter(Boolean).join(', ')].filter(Boolean).join(' · '))}</span>` : `<span>${v.pairs.length} Paare aus Kunde und Objekt</span>`}
+        ${items.length > 1 ? searchBox('visitSearch', visitQuery, 'Suchen: Tür-Nr., Standort …  ( / )') : ''}
         <span class="dk-sum-r">${progBar(done, items.length)} <b>${done} von ${items.length} fertig</b>${withDef ? ` · <b class="red">${withDef} mit Mängeln</b>` : ''}</span>
       </div>
       <section class="dk-panel">
         ${items.length ? `<table class="dt dt-items ${Object.keys(colW).length ? 'fixed' : ''}" ${Object.keys(colW).length ? `style="width:${Object.values(colW).reduce((a, b) => a + b, 0)}px"` : ''}>
           <thead><tr>${[['nr0', '#', 'num'], ['kind', 'Tor / Tür'], ['standort', 'Standort / Lage'], ['nr', 'Nr.'], ['typ', 'Typ'], ['hersteller', 'Hersteller'], ['bj', 'Bj.', 'num'], ...(showAll ? [['pair', 'Kunde · Objekt']] : []), ['status', 'Status'], ['maengel', 'Mängel', 'num']].map(([k, t, c]) => { const s = getSort(); const on = s.k === k; return `<th class="sortable ${c || ''} ${on ? 'on' : ''}" data-act="sortBy" data-k="${k}" ${colW[k] ? `style="width:${colW[k]}px"` : ''} title="Nach ${t === '#' ? 'Reihenfolge' : t} sortieren" aria-sort="${on ? (s.d === 1 ? 'ascending' : 'descending') : 'none'}">${t}<span class="sort-ind">${on ? (s.d === 1 ? ' ▲' : ' ▼') : ''}</span><span class="col-rs" data-col="${k}" title="Ziehen: Breite ändern · Doppelklick: alle Breiten zurücksetzen"></span></th>`; }).join('')}<th data-k="acts" ${colW.acts ? `style="width:${colW.acts}px"` : ''}></th></tr></thead>
           <tbody>${showAll
-            ? v.pairs.map(p => { const its = all.filter(i => pairOfItem(v, i).id === p.id); return `<tr class="dt-group"><td colspan="11"><button class="link" data-act="filterPair" data-id="${p.id}">${esc(pairLabel(p))} ›</button> <span class="muted">${its.length}</span></td></tr>${sortItems(its, v).map(([i, n]) => tr(i, n)).join('')}`; }).join('')
-            : sortItems(items, v).map(([i, n]) => tr(i, n)).join('')}</tbody></table>`
+            ? v.pairs.map(p => { const its = all.filter(i => pairOfItem(v, i).id === p.id); return `<tr class="dt-group"><td colspan="11"><button class="link" data-act="filterPair" data-id="${p.id}">${esc(pairLabel(p))} ›</button> <span class="muted">${its.length}</span></td></tr>${sorted(its).map(([i, n]) => tr(i, n)).join('')}`; }).join('')
+            : sorted(items).map(([i, n]) => tr(i, n)).join('') || `<tr><td colspan="11" class="muted">Keine Tür und kein Tor passt zur Suche.</td></tr>`}</tbody></table>`
           : '<p class="dk-empty">Noch keine Tore oder Türen. Oben mit „＋ Tor“ oder „＋ Tür“ hinzufügen.</p>'}
       </section>
     </main>`;

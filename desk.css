@@ -272,3 +272,10 @@ html.desk .col-rs::after { content: ''; position: absolute; left: 4px; top: 25%;
 html.desk .col-rs:hover::after, body.col-resizing .col-rs::after { background: var(--brand); width: 2px; }
 body.col-resizing, body.col-resizing * { cursor: col-resize !important; user-select: none; }
 html.desk .dk-panel:has(.dt-items.fixed) { overflow-x: auto; }
+html.desk .dk-tb .search-box { margin: 0 0 0 auto; width: 340px; }
+html.desk .dk-sum .search-box { margin: 0; width: 300px; }
+html.desk .search-box .field { min-height: 30px; height: 30px; padding: 0 30px 0 10px; border-radius: 6px; }
+html.desk .search-x { width: 22px; height: 22px; font-size: .95em; }
+html.desk .dup-box { border-width: 1px; border-radius: 8px; padding: 8px 12px; grid-column: 1 / -1; }
+html.desk .dup-b { min-height: 28px; padding: 0 12px; border-radius: 6px; border-width: 1px; font-size: .95em; }
+html.desk .dup-inline { display: none; }
