@@ -331,3 +331,6 @@ html.desk .gpop-figs { flex-direction: row; flex-wrap: wrap; }
 html.desk .gpop-fig { flex: 1 1 300px; }
 html.desk .sheet-inner .gpop-more { justify-content: center; color: var(--brand); font-weight: 600; }
 html.desk .protocol-nav .dn-foot, html.desk #dknav .dn-foot { margin-top: auto; }
+html.desk .vg-lbl { display: inline-flex; align-items: center; gap: 6px; font-size: .85em; white-space: nowrap; }
+html.desk .vg-lbl select.field { min-height: 30px; padding: 2px 6px; width: auto; }
+html.desk tr.dt-group.vg-h.lvl2 td { padding-left: 28px; background: none; font-size: .92em; }

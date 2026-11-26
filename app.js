@@ -1484,11 +1484,50 @@ function setSort(k) {
   settings.set('visitSort', { k, d: cur.k === k ? -cur.d : 1 });
   renderVisit();
 }
+
+// ---------- Liste im Termin gruppieren: frei nach Objekt, Kunde, Etage; Standard Objekt und darin Etage ----------
+const VGROUPS = [['objekt-etage', 'Objekt, darin Etage'], ['objekt', 'Objekt'], ['kunde', 'Kunde'], ['kunde-objekt', 'Kunde, darin Objekt'], ['etage', 'Etage'], ['', 'nicht gruppieren']];
+const getVGroup = () => { const g = settings.get('visitGroup', 'objekt-etage'); return VGROUPS.some(([k]) => k === g) ? g : 'objekt-etage'; };
+async function groupCtx() { const [gates, sites] = await Promise.all([db.all('gates'), db.all('sites')]); return { gById: new Map(gates.map(g => [g.id, g])), sById: new Map(sites.map(x => [x.id, x])) }; }
+// rows: [[item, nr], …] schon sortiert. Ergebnis: [{ h, lvl, n, rows }]; h = null heißt ohne Überschrift
+function groupVisit(rows, mode, C) {
+  if (!mode || !rows.length) return [{ h: null, rows }];
+  const objL = (i) => { const st = C.sById.get(i.siteId); return st && hasName(st) ? sname(st) : [i.header?.objekt?.name, i.header?.objekt?.strasse].filter(Boolean).join(', ') || 'Ohne Objekt'; };
+  const kunL = (i) => i.header?.kunde?.name || 'Ohne Kunde';
+  const byName = (a, b) => a[0].startsWith('Ohne ') - b[0].startsWith('Ohne ') || a[0].localeCompare(b[0], 'de', { numeric: true });
+  const part = (rs, key) => { const m = new Map(); rs.forEach(r => { const k = key(r[0]); if (!m.has(k)) m.set(k, []); m.get(k).push(r); }); return [...m].sort(byName); };
+  // Etagen von oben nach unten; in einem Objekt nach seiner Reihenfolge, über Objekte hinweg nach Geschoss
+  const etParts = (rs, oneSite) => {
+    const et = (i) => { const st = C.sById.get(i.siteId), eid = C.gById.get(i.gateId)?.etageId, f = floorsOf(st).find(x => x.id === eid); return f ? { k: f.name, o: oneSite ? f.order : (floorRank(f.name) ?? f.order) } : null; };
+    if (!rs.some(r => et(r[0]))) return null;
+    const m = new Map();
+    rs.forEach(r => { const e = et(r[0]), k = e ? e.k : 'Ohne Etage'; if (!m.has(k)) m.set(k, { o: e ? e.o : -1e9, rows: [] }); m.get(k).rows.push(r); });
+    return [...m].sort((a, b) => b[1].o - a[1].o).map(([k, x]) => [k, x.rows]);
+  };
+  const out = [];
+  const nest = (outer, inner) => {
+    const groups = part(rows, outer), many = groups.length > 1;
+    for (const [h, rs] of groups) {
+      const sub = inner(rs);
+      if (many) out.push({ h, lvl: 1, n: rs.length, rows: sub ? [] : rs });
+      if (sub) sub.forEach(([h2, rs2]) => out.push({ h: h2, lvl: many ? 2 : 1, n: rs2.length, rows: rs2 }));
+      else if (!many) out.push({ h: null, rows: rs });
+    }
+  };
+  if (mode === 'objekt-etage') nest(objL, (rs) => etParts(rs, new Set(rs.map(r => r[0].siteId)).size === 1));
+  else if (mode === 'kunde-objekt') nest(kunL, (rs) => { const g = part(rs, objL); return g.length > 1 ? g : null; });
+  else if (mode === 'objekt') nest(objL, () => null);
+  else if (mode === 'kunde') nest(kunL, () => null);
+  else if (mode === 'etage') { const g = etParts(rows, new Set(rows.map(r => r[0].siteId)).size === 1); if (!g) return [{ h: null, rows }]; g.forEach(([h, rs]) => out.push({ h, lvl: 1, n: rs.length, rows: rs })); }
+  return out.length ? out : [{ h: null, rows }];
+}
+const vGroupSel = (cls = 'field sm') => `<select class="${cls}" data-vgroup title="Gruppieren">${VGROUPS.map(([k, t]) => `<option value="${k}" ${getVGroup() === k ? 'selected' : ''}>${t}</option>`).join('')}</select>`;
 function sortBarHTML() {
   const { k, d } = getSort();
   return `<div class="sort-bar"><label class="muted small" for="visitSortSel">Sortieren</label>
     <select class="field sm" id="visitSortSel" data-sort-sel>${SORTS.filter(([x]) => x !== 'pair').map(([x, t]) => `<option value="${x}" ${x === k ? 'selected' : ''}>${t}</option>`).join('')}</select>
-    <button class="icon-btn sm sort-dir" data-act="sortDir" aria-label="${d === 1 ? 'Aufsteigend' : 'Absteigend'}" title="Richtung umkehren">${d === 1 ? '↑' : '↓'}</button></div>`;
+    <button class="icon-btn sm sort-dir" data-act="sortDir" aria-label="${d === 1 ? 'Aufsteigend' : 'Absteigend'}" title="Richtung umkehren">${d === 1 ? '↑' : '↓'}</button></div>
+    <div class="sort-bar"><label class="muted small">Gruppieren</label>${vGroupSel()}</div>`;
 }
 
 function itemRow(i, dup = false, todoN = 0) {
@@ -1513,13 +1552,10 @@ async function renderVisit() {
   const shown = (list) => q ? list.filter(i => matchScore(i, q) > 0) : list;
   const tN = await todoCounts();
   const rowM = (i) => itemRow(i, dups.has(i.id), tN.get(i.gateId) || 0);
+  const C = await groupCtx();
   const list = q ? (() => { const hits = sortItems(shown(items), v).sort((a, b) => matchScore(b[0], q) - matchScore(a[0], q)); return hits.map(([i]) => rowM(i)).join('') || '<p class="empty">Keine Tür und kein Tor passt zur Suche.</p>'; })()
     : !items.length ? '<p class="empty">Noch keine Tore oder Türen in diesem Termin.</p>'
-    : showAll ? v.pairs.map(p => {
-        const its = all.filter(i => pairOfItem(v, i).id === p.id);
-        return `<h3 class="pair-h"><button class="link" data-act="filterPair" data-id="${p.id}">${esc(pairLabel(p))} ›</button></h3>${sortItems(its, v).map(([i]) => rowM(i)).join('') || '<p class="muted small pair-empty">Noch keine Tore oder Türen.</p>'}`;
-      }).join('')
-    : sortItems(items, v).map(([i]) => rowM(i)).join('');
+    : groupVisit(sortItems(items, v), getVGroup(), C).map(g => (g.h ? `<h3 class="pair-h vg-h lvl${g.lvl}">${esc(g.h)} <span class="muted small">${g.n}</span></h3>` : '') + g.rows.map(([i]) => rowM(i)).join('')).join('');
   $app.innerHTML = `
     <header class="bar">
       <button class="icon-btn" data-act="toHome" aria-label="Übersicht">‹</button>
@@ -3053,6 +3089,7 @@ document.addEventListener('change', (e) => {
   }
   if (e.target.dataset?.flt !== undefined) { const F = getDF(); F[e.target.dataset.flt] = e.target.value; if (e.target.dataset.flt === 'site') { F.kunde = ''; F.etage = ''; } setDF(F); selDoors = new Set(); return rerenderDL(); }
   if (e.target.id === 'ndSite' || e.target.id === 'ndKunde') e.target.dispatchEvent(new Event('input', { bubbles: true }));
+  if (e.target.dataset?.vgroup !== undefined) { settings.set('visitGroup', e.target.value); return renderVisit(); }
   if (e.target.dataset?.sortSel !== undefined) { settings.set('visitSort', { k: e.target.value, d: 1 }); return renderVisit(); }
   if (e.target.dataset?.planup) return planUpload(e.target);
   const f = e.target.dataset?.photoFor;
@@ -3286,7 +3323,7 @@ async function renderVisitDesk() {
   const done = items.filter(i => i.status === 'done').length;
   const withDef = items.filter(i => i.status === 'done' && hasDefects(i)).length;
   const one = !multi ? v.pairs[0] : (showAll ? null : pairById(v, v.filter));
-  const dups = dupSet(all), q = visitQuery.trim(), tN = await todoCounts();
+  const dups = dupSet(all), q = visitQuery.trim(), tN = await todoCounts(), C = await groupCtx();
   const sorted = (list) => { const r = sortItems(q ? list.filter(i => matchScore(i, q) > 0) : list, v); return q ? r.sort((a, b) => matchScore(b[0], q) - matchScore(a[0], q)) : r; };
   const tr = (i, n) => {
     const [cls, label] = itemState(i);
@@ -3324,14 +3361,14 @@ async function renderVisitDesk() {
       <div class="dk-sum">
         ${one ? `<span>${esc([one.kunde?.name, [one.objekt?.name, one.objekt?.strasse, one.objekt?.plzOrt].filter(Boolean).join(', ')].filter(Boolean).join(' · '))}</span>` : `<span>${v.pairs.length} Paare aus Kunde und Objekt</span>`}
         ${items.length > 1 ? searchBox('visitSearch', visitQuery, 'Suchen: Tür-Nr., Standort …  ( / )') : ''}
+        ${items.length > 1 ? `<label class="vg-lbl muted">Gruppieren ${vGroupSel('field sm')}</label>` : ''}
         <span class="dk-sum-r">${progBar(done, items.length)} <b>${done} von ${items.length} fertig</b>${withDef ? ` · <b class="red">${withDef} mit Mängeln</b>` : ''}</span>
       </div>
       <section class="dk-panel">
         ${items.length ? `<table class="dt dt-items ${Object.keys(colW).length ? 'fixed' : ''}" ${Object.keys(colW).length ? `style="width:${Object.values(colW).reduce((a, b) => a + b, 0)}px"` : ''}>
           <thead><tr>${[['nr0', '#', 'num'], ['kind', 'Tor / Tür'], ['standort', 'Standort / Lage'], ['nr', 'Nr.'], ['typ', 'Typ'], ['hersteller', 'Hersteller'], ['bj', 'Bj.', 'num'], ...(showAll ? [['pair', 'Kunde · Objekt']] : []), ['status', 'Status'], ['maengel', 'Mängel', 'num']].map(([k, t, c]) => { const s = getSort(); const on = s.k === k; return `<th class="sortable ${c || ''} ${on ? 'on' : ''}" data-act="sortBy" data-k="${k}" ${colW[k] ? `style="width:${colW[k]}px"` : ''} title="Nach ${t === '#' ? 'Reihenfolge' : t} sortieren" aria-sort="${on ? (s.d === 1 ? 'ascending' : 'descending') : 'none'}">${t}<span class="sort-ind">${on ? (s.d === 1 ? ' ▲' : ' ▼') : ''}</span><span class="col-rs" data-col="${k}" title="Ziehen: Breite ändern · Doppelklick: alle Breiten zurücksetzen"></span></th>`; }).join('')}<th data-k="acts" ${colW.acts ? `style="width:${colW.acts}px"` : ''}></th></tr></thead>
-          <tbody>${showAll
-            ? v.pairs.map(p => { const its = all.filter(i => pairOfItem(v, i).id === p.id); return `<tr class="dt-group"><td colspan="11"><button class="link" data-act="filterPair" data-id="${p.id}">${esc(pairLabel(p))} ›</button> <span class="muted">${its.length}</span></td></tr>${sorted(its).map(([i, n]) => tr(i, n)).join('')}`; }).join('')
-            : sorted(items).map(([i, n]) => tr(i, n)).join('') || `<tr><td colspan="11" class="muted">Keine Tür und kein Tor passt zur Suche.</td></tr>`}</tbody></table>`
+          <tbody>${q ? (sorted(items).map(([i, n]) => tr(i, n)).join('') || `<tr><td colspan="11" class="muted">Keine Tür und kein Tor passt zur Suche.</td></tr>`)
+            : groupVisit(sorted(items), getVGroup(), C).map(g => (g.h ? `<tr class="dt-group vg-h lvl${g.lvl}"><td colspan="11"><b>${esc(g.h)}</b> <span class="muted">${g.n}</span></td></tr>` : '') + g.rows.map(([i, n]) => tr(i, n)).join('')).join('')}</tbody></table>`
           : '<p class="dk-empty">Noch keine Tore oder Türen. Oben mit „＋ Tor“ oder „＋ Tür“ hinzufügen.</p>'}
       </section>
     </main>`;
