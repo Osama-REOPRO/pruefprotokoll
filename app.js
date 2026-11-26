@@ -671,7 +671,6 @@ function renderHeader() {
         </section>
         <p class="hint">Oder Daten unten prüfen und dann Abschnitt für Abschnitt bestätigen.</p>` : (insp.gateId && !insp.paper && !insp.freshGate ? '<p class="hint">Daten vom letzten Mal übernommen. Nur prüfen, was sich geändert hat.</p>' : '')}
       ${todoListCard()}
-      ${noteCard([['inspections', insp.id, insp.intNote], ['gates', insp.gateId, ctxNotes.gates], ['visits', insp.visitId, ctxNotes.visits], ['sites', insp.siteId, ctxNotes.sites], ['customers', insp.customerId, ctxNotes.customers]])}
       <div id="dupWarn" class="dup-warn"></div>
       ${insp.visitId ? `<button class="hint pair-line" data-act="movePairAsk" data-id="${insp.id}"><span>Kunde und Objekt kommen vom Termin:</span> <b>${esc(pairLabel({ objekt: insp.header.objekt, kunde: insp.header.kunde }))}</b> <span class="link-ish">ändern ›</span></button>` : ''}
       ${groups}
@@ -1023,6 +1022,7 @@ function renderFinish() {
       <button class="big-btn" data-act="print">🖨 Protokoll ansehen / drucken / PDF</button>
       <button class="big-btn ghost" data-act="duplicate" data-id="${insp.id}">⧉ ${esc(unitOf(insp).noun)} duplizieren (gleiche Häkchen)</button>
       <p class="disclaimer">${tpl.disclaimer.map(esc).join(' ')}</p>
+      ${noteSection('inspections', insp.id, insp.intNote)}
       <button class="big-btn danger" data-act="askDel" data-kind="inspection" data-id="${insp.id}">🗑 Dieses Protokoll löschen</button>
     </main>
     <nav class="bottom">
@@ -1060,6 +1060,7 @@ function renderFinishPaper() {
         </div>
         <p class="muted small">📄 Wird nicht gedruckt. Erscheint bei der nächsten Prüfung dieser ${esc(unitOf(insp).noun)} als „letztes Mal“.</p>
       </section>
+      ${noteSection('inspections', insp.id, insp.intNote)}
       <button class="big-btn danger" data-act="askDel" data-kind="inspection" data-id="${insp.id}">🗑 Dieses Papierprotokoll löschen</button>
     </main>
     <nav class="bottom">
@@ -1471,7 +1472,6 @@ function itemRow(i, dup = false, todoN = 0) {
 }
 async function renderVisit() {
   if (DESK) return renderVisitDesk();
-  const R_notes = await notesMaps();
   const v = ensurePairs(visit), all = await visitItems(v);
   const multi = v.pairs.length > 1;
   const showAll = multi && v.filter === 'all';
@@ -1499,7 +1499,6 @@ async function renderVisit() {
     </header>
     <main class="home">
       ${pairChips(v, all)}
-      ${noteCard([['visits', v.id, v.intNote], ...(one ? [['sites', one.siteId, R_notes.sites.get(one.siteId)], ['customers', one.customerId, R_notes.customers.get(one.customerId)]] : [])])}
       <section class="card visit-head">
         ${one ? `<div class="muted small">${esc([one.kunde?.name, [one.objekt?.name, one.objekt?.strasse, one.objekt?.plzOrt].filter(Boolean).join(', ')].filter(Boolean).join(' · '))}</div>` : ''}
         <div class="vprog"><span class="mini-progress"><span style="width:${items.length ? Math.round(done / items.length * 100) : 0}%"></span></span>
@@ -1512,6 +1511,7 @@ async function renderVisit() {
         <button class="big-btn" data-act="addNewGate" data-kind="tor">＋ Tor</button>
         <button class="big-btn" data-act="addNewGate" data-kind="tuer">＋ Tür</button>
       </div>
+      ${noteSection('visits', v.id, v.intNote)}
       <button class="big-btn" data-act="sendVisit" data-id="${v.id}">📤 Termin senden (an Handy / Laptop)</button>
       ${items.length ? `<button class="big-btn" data-act="printVisit">🖨 ${items.length === 1 ? 'Protokoll' : `Alle ${items.length} Protokolle`} drucken / PDF</button>` : ''}
     </main>`;
@@ -1560,7 +1560,6 @@ async function movePair(inspId, pairId) {
 
 // Im Büro: Kunde, Objekt, Datum und die Tore vorbereiten
 async function renderVisitEdit() {
-  const R_notes = await notesMaps();
   const v = ensurePairs(visit), allItems = await visitItems(v), P = editPair(v);
   const items = allItems.filter(i => pairOfItem(v, i).id === P.id);
   const allGates = await db.all('gates'), gById = new Map(allGates.map(g => [g.id, g]));
@@ -1593,7 +1592,6 @@ async function renderVisitEdit() {
       ${pairChips(v, allItems, { edit: true })}
       ${groupHTML('objekt')}
       ${groupHTML('kunde')}
-      ${noteCard([['visits', v.id, v.intNote], ['sites', P.siteId, R_notes.sites.get(P.siteId)], ['customers', P.customerId, R_notes.customers.get(P.customerId)]])}
       <section class="card">
         <h2>${v.pairs.length > 1 ? 'Tore und Türen für dieses Paar' : 'Tore und Türen in diesem Termin'} <span class="muted small">${items.length}</span></h2>
         ${items.map(i => {
@@ -1615,6 +1613,7 @@ async function renderVisitEdit() {
           <button class="big-btn" data-act="addNewGate" data-kind="tuer">＋ Neue Tür</button>
         </div>
       </section>
+      ${noteSection('visits', v.id, v.intNote)}
       <button class="big-btn danger" data-act="askDel" data-kind="visit" data-id="${v.id}">🗑 Termin löschen</button>
     </main>
     <nav class="bottom"><button class="nav-btn next ready" data-act="openVisit" data-id="${v.id}">Fertig ›</button></nav>`;
@@ -2059,7 +2058,7 @@ async function renderKunde(id) {
     ${regBar(backOf.k, `<span id="scrT">${esc(c.name || 'Neuer Kunde')}</span>`, 'Kunde', `${DESK ? '<button class="tb-btn primary" data-act="newSiteFor" data-id="' + id + '">＋ Objekt</button>' : ''}<button class="${DESK ? 'tb-btn icon' : 'icon-btn'}" data-act="menu" data-for="customer" data-id="${id}" aria-label="Mehr">⋯</button>`)}
     <main class="${DESK ? 'dk-page' : 'home'} reg-page ent-page">
       <div class="ent-top">
-        ${fold('kData', 'Kundendaten', fieldGrid(kg.fields, c, 'data-ck', 'data-cid') + noteField('customers', id, c.intNote, 'Interne Notiz'), !c.name || DESK)}
+        ${fold('kData', 'Kundendaten', fieldGrid(kg.fields, c, 'data-ck', 'data-cid'), !c.name || DESK)}
       </div>
       ${panel(`Objekte <span class="muted small">${sites.length}</span>${DESK ? '' : `<button class="mini-link push-r" data-act="newSiteFor" data-id="${id}">＋ Objekt</button>`}`, sites.length
         ? (DESK ? `<table class="dt"><thead><tr><th>Objekt</th><th>Ort</th><th>Türen und Tore</th><th>Etagen</th><th>Weitere Kunden</th></tr></thead><tbody>${sites.map(sRow).join('')}</tbody></table>` : sites.map(sRow).join(''))
@@ -2067,6 +2066,7 @@ async function renderKunde(id) {
       ${nAll ? `<p class="muted small"><button class="link-ish" data-act="kundeDoors" data-id="${id}">🚪 Alle ${nDoors(nAll)} dieses Kunden in einer Liste ›</button></p>` : ''}
       ${panel(`Termine <span class="muted small">${vs.length}</span>`, vs.length ? (DESK ? `<table class="dt"><thead><tr><th>Datum</th><th>Termin</th><th>Fertig</th></tr></thead><tbody>${vs.map(vRow).join('')}</tbody></table>` : vs.map(vRow).join(''))
         : `<p class="${DESK ? 'dk-empty' : 'muted'}">Noch keine Termine.</p>`)}
+      ${noteSection('customers', id, c.intNote)}
     </main>`;
   if (!c.name) document.querySelector('input[data-ck="name"]')?.focus();
 }
@@ -2108,13 +2108,14 @@ async function renderObjekt(id) {
       <section class="${DESK ? 'dk-sum' : 'card'} ent-kunden"><span class="muted">Kunden</span> ${kChips || '<span class="muted small">noch keiner</span>'} <button class="mini-link" data-act="siteKundeAdd" data-id="${id}">＋ Kunde</button></section>
       ${planRow}
       <div class="ent-top">
-        ${fold('oData', 'Objektdaten', fieldGrid(og.fields, st, 'data-os', 'data-sid') + noteField('sites', id, st.intNote, 'Interne Notiz'), !hasName(st) || DESK)}
+        ${fold('oData', 'Objektdaten', fieldGrid(og.fields, st, 'data-os', 'data-sid'), !hasName(st) || DESK)}
         ${fold('oFloors', `Etagen und Pläne <span class="muted small">${floorsOf(st).length}</span>`, floorsEditor(st) + plan, DESK)}
       </div>
       ${DESK ? '' : searchBox('regSearch', regQuery, 'Tür suchen: Nr., Standort …')}
       ${D.filters}
       ${panel(`${D.title} <span class="muted small">${D.count}</span>`, D.body)}
       ${DESK ? '' : `<div class="two">${addDoorBtns('big-btn primary')}</div>`}
+      ${noteSection('sites', id, st.intNote)}
     </main>
     ${selBar()}`;
   if (!hasName(st)) document.querySelector('input[data-os="name"]')?.focus();
@@ -2159,7 +2160,6 @@ async function editSite(sid) {
     <h2 class="sheet-h">Objekt</h2>
     <div class="grid">${og.fields.map(f => `<label class="fld ${f.half ? 'half' : ''}"><span class="lbl">${esc(f.label)}</span><input class="field" data-os="${f.key}" data-sid="${sid}" value="${esc(st[f.key])}" autocomplete="off"></label>`).join('')}</div>
     ${floorsEditor(st)}
-    <label class="fld inote"><span class="lbl">🔒 Interne Notiz (nur für uns)</span><textarea class="field" rows="3" data-inote="sites:${sid}">${esc(st.intNote || '')}</textarea></label>
     <p class="muted small">Gilt für alle Türen an diesem Objekt. Fertige Protokolle behalten die Angaben von damals.</p>
     <button class="big-btn primary" data-act="kundeDone">Fertig</button>
   </div>`;
@@ -2223,8 +2223,8 @@ async function renderDoor(id) {
       })()}
       ${panel(`Protokolle <span class="muted small">${protos.length}</span>`, protos.length ? (DESK ? `<table class="dt"><thead><tr><th>Datum</th><th>Herkunft</th><th>Kunde</th><th>Ergebnis</th><th>Bemerkungen</th></tr></thead><tbody>${protos.map(protoRow).join('')}</tbody></table>` : protos.map(protoRow).join(''))
         : `<p class="${DESK ? 'dk-empty' : 'muted'}">Noch keine Protokolle. Alte Papierprotokolle hier nachtragen, dann stehen sie vor Ort als „letztes Mal“ zum Vergleich bereit.</p>`)}
-      ${noteCard([['gates', g.id, g.intNote], ['sites', g.siteId, st?.intNote], ['customers', g.customerId, c?.intNote]], 'panel')}
       <div class="door-groups">${groups}</div>
+      ${noteSection('gates', g.id, g.intNote)}
       ${log.length ? panel(`Änderungen <span class="muted small">${log.length}</span>`, `<ul class="door-log">${log.slice(0, 50).map(l => `<li><span class="muted">${esc(l.datum)} · ${esc(l.src)}:</span> ${esc(l.field)} <s>${esc(l.from)}</s> → <b>${esc(l.to)}</b></li>`).join('')}</ul>`) : ''}
     </main>`;
   if (focusNr) { focusNr = false; document.querySelector(`input[data-gd="${t.unit.group}.${t.unit.nr}"]`)?.focus(); }
@@ -2301,7 +2301,6 @@ async function editKunde(cid) {
     <div class="sheet-grab"></div>
     <h2 class="sheet-h">Kunde</h2>
     <div class="grid">${kg.fields.map(f => `<label class="fld ${f.half ? 'half' : ''}"><span class="lbl">${esc(f.label)}</span><input class="field" data-ck="${f.key}" data-cid="${cid}" value="${esc(c[f.key])}" autocomplete="off"></label>`).join('')}</div>
-    <label class="fld inote"><span class="lbl">🔒 Interne Notiz (nur für uns)</span><textarea class="field" rows="3" data-inote="customers:${cid}">${esc(c.intNote || '')}</textarea></label>
     <p class="muted small">Gilt für alle Objekte und Türen dieses Kunden. Fertige Protokolle behalten die Angaben von damals.</p>
     <button class="big-btn primary" data-act="kundeDone">Fertig</button>
   </div>`;
@@ -2428,23 +2427,13 @@ document.addEventListener('keydown', (e) => {
 // ---------- Interne Notizen (nur für uns, kommen nie ins Protokoll) ----------
 // Jede Tür, jeder Termin, Kunde, jedes Objekt und Protokoll hat ein Feld intNote.
 let ctxNotes = {};
-async function notesMaps() { const [st, c] = await Promise.all([db.all('sites'), db.all('customers')]); return { sites: new Map(st.map(x => [x.id, x.intNote || ''])), customers: new Map(c.map(x => [x.id, x.intNote || ''])) }; }
-const openINotes = new Set();
-const INOTE_LBL = { inspections: 'Diese Prüfung', gates: 'Tür / Tor', sites: 'Objekt', customers: 'Kunde', visits: 'Termin' };
-function noteField(store, id, val, label = INOTE_LBL[store]) {
+// Eine Notiz pro Ding, immer am Ende seiner eigenen Seite. Nur für uns, kommt nie ins Protokoll.
+const INOTE_LBL = { inspections: 'diesem Protokoll', gates: 'dieser Tür', sites: 'diesem Objekt', customers: 'diesem Kunden', visits: 'diesem Termin' };
+function noteSection(store, id, val) {
   if (!id) return '';
-  const key = `${store}:${id}`;
-  if (!val && !openINotes.has(key)) return `<button type="button" class="chip inote-add" data-act="inoteOpen" data-key="${key}" data-label="${esc(label)}">＋ ${esc(label)}</button>`;
-  return `<label class="fld inote"><span class="lbl">🔒 ${esc(label)}</span><textarea class="field" rows="2" data-inote="${key}" placeholder="Nur für uns, kommt nicht ins Protokoll">${esc(val || '')}</textarea></label>`;
-}
-// Karte mit mehreren Notizfeldern; leere erscheinen nur als kleine Knöpfe
-function noteCard(fields, cls = '') {
-  const parts = fields.map(f => noteField(...f)).filter(Boolean);
-  if (!parts.length) return '';
-  const filled = parts.filter(x => x.startsWith('<label')), empty = parts.filter(x => !x.startsWith('<label'));
-  const body = `${filled.join('')}${empty.length ? `<div class="chips inote-chips"><span class="muted small">Interne Notiz:</span>${empty.join('')}</div>` : ''}`;
-  return DESK && cls === 'panel' ? `<section class="dk-panel inote-card"><h2>🔒 Interne Notizen <span class="muted">nur für uns, nicht im Protokoll</span></h2><div class="inote-body">${body}</div></section>`
-    : `<section class="card inote-card">${filled.length ? '<h2>🔒 Interne Notizen <span class="muted small">nur für uns</span></h2>' : ''}${body}</section>`;
+  const body = `<textarea class="field" rows="3" data-inote="${store}:${id}" placeholder="Notiz zu ${INOTE_LBL[store]}, nur für uns, kommt nicht ins Protokoll">${esc(val || '')}</textarea>`;
+  return DESK ? `<section class="dk-panel inote-card"><h2>🔒 Interne Notiz <span class="muted">nur für uns, nicht im Protokoll</span></h2><div class="inote-body">${body}</div></section>`
+    : `<section class="card inote-card"><h2>🔒 Interne Notiz <span class="muted small">nur für uns</span></h2>${body}</section>`;
 }
 let inoteChain = Promise.resolve();
 function saveINote(key, val) {
@@ -2768,7 +2757,6 @@ document.addEventListener('click', async (e) => {
     case 'prev': return go(stepBy(-1));
     case 'next': window.scrollTo(0, 0); return go(stepBy(1));
     case 'checkNext': if (!autoDone(step)) setMarked(step, true); saveNow(); window.scrollTo(0, 0); return go(stepBy(1));
-    case 'inoteOpen': { openINotes.add(b.dataset.key); const [st, id] = b.dataset.key.split(':'); const lab = document.createElement('div'); lab.innerHTML = noteField(st, id, '', b.dataset.label); const card = b.closest('.inote-card'); const chips = b.closest('.inote-chips'); const el = lab.firstElementChild; (chips || b).before(el); b.remove(); if (chips && !chips.querySelector('.inote-add')) chips.remove(); el.querySelector('textarea')?.focus(); return; }
     case 'kundeDone': await inoteChain; await ckChain; await flChain; closeJump(); if (insp) { await loadCtxNotes(); return renderStepKeepScroll(); } return route();
     case 'etQuick': { const i = document.getElementById('etName'); if (i) i.value = b.dataset.v; return; }
     case 'etSave': return etSave(b.dataset.site, b.dataset.gid, document.getElementById('etName')?.value || '');
@@ -3222,7 +3210,6 @@ function renderHomeDesk({ open, done, single, resume, all, visits }) {
 }
 
 async function renderVisitDesk() {
-  const R_notes = await notesMaps();
   const v = ensurePairs(visit), all = await visitItems(v);
   const colW = settings.get('colW', {}) || {};
   const multi = v.pairs.length > 1;
@@ -3265,7 +3252,6 @@ async function renderVisitDesk() {
     </header>
     <main class="dk-page">
       ${multi ? pairChips(v, all) : ''}
-      ${noteCard([['visits', v.id, v.intNote], ...(one ? [['sites', one.siteId, R_notes.sites.get(one.siteId)], ['customers', one.customerId, R_notes.customers.get(one.customerId)]] : [])], 'panel')}
       <div class="dk-sum">
         ${one ? `<span>${esc([one.kunde?.name, [one.objekt?.name, one.objekt?.strasse, one.objekt?.plzOrt].filter(Boolean).join(', ')].filter(Boolean).join(' · '))}</span>` : `<span>${v.pairs.length} Paare aus Kunde und Objekt</span>`}
         ${items.length > 1 ? searchBox('visitSearch', visitQuery, 'Suchen: Tür-Nr., Standort …  ( / )') : ''}
@@ -3279,6 +3265,7 @@ async function renderVisitDesk() {
             : sorted(items).map(([i, n]) => tr(i, n)).join('') || `<tr><td colspan="11" class="muted">Keine Tür und kein Tor passt zur Suche.</td></tr>`}</tbody></table>`
           : '<p class="dk-empty">Noch keine Tore oder Türen. Oben mit „＋ Tor“ oder „＋ Tür“ hinzufügen.</p>'}
       </section>
+      ${noteSection('visits', v.id, v.intNote)}
     </main>`;
 }
 

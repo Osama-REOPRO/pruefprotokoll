@@ -452,9 +452,6 @@ a.big-btn.as-a { display: flex; margin-bottom: 12px; }
 .sec-line { display: contents; }
 /* Interne Notizen */
 .inote-card { border-left: 5px solid #7c3aed; }
-.inote-card .fld.inote { margin-bottom: 8px; }
-.inote-chips { align-items: center; gap: 6px; margin: 0; }
-.chip.inote-add { font-size: .85em; }
 .fld.inote textarea { width: 100%; }
 /* Etagen */
 .fl-edit { margin: 10px 0; }
@@ -473,7 +470,6 @@ details.fold > summary h2 { margin: 0; justify-content: flex-start; gap: 6px; }
 details.fold > summary h2::before { content: '▸'; color: var(--muted); display: inline-block; width: 1em; transition: transform .15s; }
 details.fold[open] > summary h2::before { transform: rotate(90deg); }
 details.fold[open] > summary { margin-bottom: 10px; }
-.fold-body .inote, .fold-body .inote-add { margin-top: 10px; }
 .ent-kunden { display: flex; flex-wrap: wrap; gap: 6px 10px; align-items: center; }
 .ent-chip { display: inline-flex; align-items: center; gap: 4px; border: 1px solid var(--line); border-radius: 999px; padding: 4px 6px 4px 10px; background: var(--card); }
 .ent-chip a { color: var(--ink); font-weight: 700; text-decoration: none; }
@@ -520,3 +516,4 @@ html.pv-open, html.pv-open body { overflow: hidden; overscroll-behavior: none; }
 .pv-src { display: flex; flex-direction: column; gap: 10px; width: 100%; max-width: 360px; margin-top: 12px; }
 .pv-src .big-btn { margin: 0; max-width: none; }
 .pv-empty .big-btn:not(.primary) { background: rgba(255,255,255,.12); color: #fff; border-color: rgba(255,255,255,.3); }
+.inote-card textarea { width: 100%; }
