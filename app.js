@@ -660,6 +660,7 @@ function renderHeader() {
   if (paint(`${topBar()}
     <main class="step">
       ${secTitle()}
+      ${noteSection('inspections', insp.id, insp.intNote)}
       ${insp.paper ? `<section class="card paper-card"><h2>📄 Altes Papierprotokoll nachtragen</h2>
         <p class="muted small">So eintragen, wie es auf dem Papier steht. Es wird nicht gedruckt und erscheint vor Ort als „letztes Mal“ zum Vergleich.</p>
         <div class="grid"><label class="fld half"><span class="lbl">Datum der Prüfung <i class="req">*</i></span><input class="field" data-f="datum" value="${esc(insp.datum)}" inputmode="numeric" placeholder="TT.MM.JJJJ" autocomplete="off"></label>
@@ -1022,7 +1023,6 @@ function renderFinish() {
       <button class="big-btn" data-act="print">🖨 Protokoll ansehen / drucken / PDF</button>
       <button class="big-btn ghost" data-act="duplicate" data-id="${insp.id}">⧉ ${esc(unitOf(insp).noun)} duplizieren (gleiche Häkchen)</button>
       <p class="disclaimer">${tpl.disclaimer.map(esc).join(' ')}</p>
-      ${noteSection('inspections', insp.id, insp.intNote)}
       <button class="big-btn danger" data-act="askDel" data-kind="inspection" data-id="${insp.id}">🗑 Dieses Protokoll löschen</button>
     </main>
     <nav class="bottom">
@@ -1060,7 +1060,6 @@ function renderFinishPaper() {
         </div>
         <p class="muted small">📄 Wird nicht gedruckt. Erscheint bei der nächsten Prüfung dieser ${esc(unitOf(insp).noun)} als „letztes Mal“.</p>
       </section>
-      ${noteSection('inspections', insp.id, insp.intNote)}
       <button class="big-btn danger" data-act="askDel" data-kind="inspection" data-id="${insp.id}">🗑 Dieses Papierprotokoll löschen</button>
     </main>
     <nav class="bottom">
@@ -1498,6 +1497,7 @@ async function renderVisit() {
       <button class="icon-btn" data-act="menu" data-for="visit" data-id="${v.id}" aria-label="Mehr">⋯</button>
     </header>
     <main class="home">
+      ${noteSection('visits', v.id, v.intNote)}
       ${pairChips(v, all)}
       <section class="card visit-head">
         ${one ? `<div class="muted small">${esc([one.kunde?.name, [one.objekt?.name, one.objekt?.strasse, one.objekt?.plzOrt].filter(Boolean).join(', ')].filter(Boolean).join(' · '))}</div>` : ''}
@@ -1511,7 +1511,6 @@ async function renderVisit() {
         <button class="big-btn" data-act="addNewGate" data-kind="tor">＋ Tor</button>
         <button class="big-btn" data-act="addNewGate" data-kind="tuer">＋ Tür</button>
       </div>
-      ${noteSection('visits', v.id, v.intNote)}
       <button class="big-btn" data-act="sendVisit" data-id="${v.id}">📤 Termin senden (an Handy / Laptop)</button>
       ${items.length ? `<button class="big-btn" data-act="printVisit">🖨 ${items.length === 1 ? 'Protokoll' : `Alle ${items.length} Protokolle`} drucken / PDF</button>` : ''}
     </main>`;
@@ -1586,6 +1585,7 @@ async function renderVisitEdit() {
       <span id="saved" class="saved ok">✓ gespeichert</span>
     </header>
     <main class="step">
+      ${noteSection('visits', v.id, v.intNote)}
       <section class="card"><label class="fld"><span class="lbl">Datum</span>
         <input class="field" data-vf="datum" value="${esc(v.datum)}" inputmode="numeric"></label></section>
       ${v.pairs.length > 1 ? '' : '<p class="muted small pair-tip">Mehrere Kunden oder Objekte in diesem Termin? Mit „＋ Paar“ ein weiteres Paar aus Kunde und Objekt anlegen.</p>'}
@@ -1613,7 +1613,6 @@ async function renderVisitEdit() {
           <button class="big-btn" data-act="addNewGate" data-kind="tuer">＋ Neue Tür</button>
         </div>
       </section>
-      ${noteSection('visits', v.id, v.intNote)}
       <button class="big-btn danger" data-act="askDel" data-kind="visit" data-id="${v.id}">🗑 Termin löschen</button>
     </main>
     <nav class="bottom"><button class="nav-btn next ready" data-act="openVisit" data-id="${v.id}">Fertig ›</button></nav>`;
@@ -2057,6 +2056,7 @@ async function renderKunde(id) {
   $app.innerHTML = `
     ${regBar(backOf.k, `<span id="scrT">${esc(c.name || 'Neuer Kunde')}</span>`, 'Kunde', `${DESK ? '<button class="tb-btn primary" data-act="newSiteFor" data-id="' + id + '">＋ Objekt</button>' : ''}<button class="${DESK ? 'tb-btn icon' : 'icon-btn'}" data-act="menu" data-for="customer" data-id="${id}" aria-label="Mehr">⋯</button>`)}
     <main class="${DESK ? 'dk-page' : 'home'} reg-page ent-page">
+      ${noteSection('customers', id, c.intNote)}
       <div class="ent-top">
         ${fold('kData', 'Kundendaten', fieldGrid(kg.fields, c, 'data-ck', 'data-cid'), !c.name || DESK)}
       </div>
@@ -2066,7 +2066,6 @@ async function renderKunde(id) {
       ${nAll ? `<p class="muted small"><button class="link-ish" data-act="kundeDoors" data-id="${id}">🚪 Alle ${nDoors(nAll)} dieses Kunden in einer Liste ›</button></p>` : ''}
       ${panel(`Termine <span class="muted small">${vs.length}</span>`, vs.length ? (DESK ? `<table class="dt"><thead><tr><th>Datum</th><th>Termin</th><th>Fertig</th></tr></thead><tbody>${vs.map(vRow).join('')}</tbody></table>` : vs.map(vRow).join(''))
         : `<p class="${DESK ? 'dk-empty' : 'muted'}">Noch keine Termine.</p>`)}
-      ${noteSection('customers', id, c.intNote)}
     </main>`;
   if (!c.name) document.querySelector('input[data-ck="name"]')?.focus();
 }
@@ -2105,6 +2104,7 @@ async function renderObjekt(id) {
   $app.innerHTML = `
     ${regBar(backOf.o, `<span id="scrT">${esc(hasName(st) ? sname(st) : 'Neues Objekt')}</span>`, `Objekt${st.plzOrt ? ' · ' + esc(st.plzOrt) : ''}`, `${DESK ? `${addDoorBtns('tb-btn primary')}${searchBox('regSearch', regQuery, 'Tür suchen …  ( / )')}` : ''}<button class="${DESK ? 'tb-btn icon' : 'icon-btn'}" data-act="menu" data-for="site" data-id="${id}" aria-label="Mehr">⋯</button>`)}
     <main class="${DESK ? 'dk-page' : 'home'} reg-page ent-page">
+      ${noteSection('sites', id, st.intNote)}
       <section class="${DESK ? 'dk-sum' : 'card'} ent-kunden"><span class="muted">Kunden</span> ${kChips || '<span class="muted small">noch keiner</span>'} <button class="mini-link" data-act="siteKundeAdd" data-id="${id}">＋ Kunde</button></section>
       ${planRow}
       <div class="ent-top">
@@ -2115,7 +2115,6 @@ async function renderObjekt(id) {
       ${D.filters}
       ${panel(`${D.title} <span class="muted small">${D.count}</span>`, D.body)}
       ${DESK ? '' : `<div class="two">${addDoorBtns('big-btn primary')}</div>`}
-      ${noteSection('sites', id, st.intNote)}
     </main>
     ${selBar()}`;
   if (!hasName(st)) document.querySelector('input[data-os="name"]')?.focus();
@@ -2205,6 +2204,7 @@ async function renderDoor(id) {
     ${regBar(listBack || `#/o/${g.siteId}`, u.nr ? unitHead(u) : esc(u.standort || `${u.noun} ohne Standort`), `${esc(u.noun)} · ${esc(sname(st))}`,
       `${DESK ? `<button class="tb-btn primary" data-act="paperNew" data-id="${g.id}">📄 Altes Protokoll (Papier) nachtragen</button>` : ''}<button class="${DESK ? 'tb-btn icon' : 'icon-btn'}" data-act="menu" data-for="gate" data-id="${g.id}" aria-label="Mehr">⋯</button>`)}
     <main class="${DESK ? 'dk-page' : 'home'} reg-page">
+      ${noteSection('gates', g.id, g.intNote)}
       ${twins.length ? `<div class="dup-box"><p><b>⚠ ${esc(u.nrLabel)} ${esc(u.nr)} gibt es an diesem Objekt ${twins.length === 1 ? 'noch einmal' : `noch ${twins.length}-mal`}.</b> Bitte prüfen, ob es dieselbe ${esc(u.noun)} ist, und die doppelte löschen.</p>
         <div class="dup-acts">${twins.map(x => `<button class="dup-b" data-act="openDoor" data-id="${x.id}">Zur anderen: ${esc(x.standort || 'ohne Standort')} ›</button>`).join('')}</div></div>` : ''}
       <section class="${DESK ? 'dk-sum' : 'card'} door-who">
@@ -2224,7 +2224,6 @@ async function renderDoor(id) {
       ${panel(`Protokolle <span class="muted small">${protos.length}</span>`, protos.length ? (DESK ? `<table class="dt"><thead><tr><th>Datum</th><th>Herkunft</th><th>Kunde</th><th>Ergebnis</th><th>Bemerkungen</th></tr></thead><tbody>${protos.map(protoRow).join('')}</tbody></table>` : protos.map(protoRow).join(''))
         : `<p class="${DESK ? 'dk-empty' : 'muted'}">Noch keine Protokolle. Alte Papierprotokolle hier nachtragen, dann stehen sie vor Ort als „letztes Mal“ zum Vergleich bereit.</p>`)}
       <div class="door-groups">${groups}</div>
-      ${noteSection('gates', g.id, g.intNote)}
       ${log.length ? panel(`Änderungen <span class="muted small">${log.length}</span>`, `<ul class="door-log">${log.slice(0, 50).map(l => `<li><span class="muted">${esc(l.datum)} · ${esc(l.src)}:</span> ${esc(l.field)} <s>${esc(l.from)}</s> → <b>${esc(l.to)}</b></li>`).join('')}</ul>`) : ''}
     </main>`;
   if (focusNr) { focusNr = false; document.querySelector(`input[data-gd="${t.unit.group}.${t.unit.nr}"]`)?.focus(); }
@@ -2429,11 +2428,13 @@ document.addEventListener('keydown', (e) => {
 let ctxNotes = {};
 // Eine Notiz pro Ding, immer am Ende seiner eigenen Seite. Nur für uns, kommt nie ins Protokoll.
 const INOTE_LBL = { inspections: 'diesem Protokoll', gates: 'dieser Tür', sites: 'diesem Objekt', customers: 'diesem Kunden', visits: 'diesem Termin' };
+const openINotes = new Set();
 function noteSection(store, id, val) {
   if (!id) return '';
-  const body = `<textarea class="field" rows="3" data-inote="${store}:${id}" placeholder="Notiz zu ${INOTE_LBL[store]}, nur für uns, kommt nicht ins Protokoll">${esc(val || '')}</textarea>`;
-  return DESK ? `<section class="dk-panel inote-card"><h2>🔒 Interne Notiz <span class="muted">nur für uns, nicht im Protokoll</span></h2><div class="inote-body">${body}</div></section>`
-    : `<section class="card inote-card"><h2>🔒 Interne Notiz <span class="muted small">nur für uns</span></h2>${body}</section>`;
+  const key = `${store}:${id}`;
+  if (!val && !openINotes.has(key)) return `<button type="button" class="inote-btn" data-act="inoteOpen" data-key="${key}">🔒 ＋ Interne Notiz</button>`;
+  return `<section class="${DESK ? 'dk-panel' : 'card'} inote-card"><label class="inote-l"><span class="lbl">🔒 Interne Notiz <span class="muted small">nur für uns, nicht im Protokoll</span></span>
+    <textarea class="field" rows="2" data-inote="${key}" placeholder="Notiz zu ${INOTE_LBL[store]}">${esc(val || '')}</textarea></label></section>`;
 }
 let inoteChain = Promise.resolve();
 function saveINote(key, val) {
@@ -2757,6 +2758,7 @@ document.addEventListener('click', async (e) => {
     case 'prev': return go(stepBy(-1));
     case 'next': window.scrollTo(0, 0); return go(stepBy(1));
     case 'checkNext': if (!autoDone(step)) setMarked(step, true); saveNow(); window.scrollTo(0, 0); return go(stepBy(1));
+    case 'inoteOpen': { openINotes.add(b.dataset.key); const [st, id] = b.dataset.key.split(':'); const d = document.createElement('div'); d.innerHTML = noteSection(st, id, ''); b.replaceWith(d.firstElementChild); return document.querySelector(`textarea[data-inote="${b.dataset.key}"]`)?.focus(); }
     case 'kundeDone': await inoteChain; await ckChain; await flChain; closeJump(); if (insp) { await loadCtxNotes(); return renderStepKeepScroll(); } return route();
     case 'etQuick': { const i = document.getElementById('etName'); if (i) i.value = b.dataset.v; return; }
     case 'etSave': return etSave(b.dataset.site, b.dataset.gid, document.getElementById('etName')?.value || '');
@@ -3251,6 +3253,7 @@ async function renderVisitDesk() {
       <button class="tb-btn icon" data-act="menu" data-for="visit" data-id="${v.id}" title="Mehr">⋯</button>
     </header>
     <main class="dk-page">
+      ${noteSection('visits', v.id, v.intNote)}
       ${multi ? pairChips(v, all) : ''}
       <div class="dk-sum">
         ${one ? `<span>${esc([one.kunde?.name, [one.objekt?.name, one.objekt?.strasse, one.objekt?.plzOrt].filter(Boolean).join(', ')].filter(Boolean).join(' · '))}</span>` : `<span>${v.pairs.length} Paare aus Kunde und Objekt</span>`}
@@ -3265,7 +3268,6 @@ async function renderVisitDesk() {
             : sorted(items).map(([i, n]) => tr(i, n)).join('') || `<tr><td colspan="11" class="muted">Keine Tür und kein Tor passt zur Suche.</td></tr>`}</tbody></table>`
           : '<p class="dk-empty">Noch keine Tore oder Türen. Oben mit „＋ Tor“ oder „＋ Tür“ hinzufügen.</p>'}
       </section>
-      ${noteSection('visits', v.id, v.intNote)}
     </main>`;
 }
 
