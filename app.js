@@ -19,7 +19,7 @@ function unitOf(i) {
   return { noun: u.noun, standort: val(u.standort), typ: val(u.typ), nr: val(u.nr), nrLabel: u.nrLabel };
 }
 // Kopfzeile: erst Nummer, dann Standort
-const unitHead = (u) => [u.nr && `${u.nrLabel} ${u.nr}`, u.standort].filter(Boolean).join(' · ') || u.noun;
+const unitHead = (u) => u.nr ? `<b class="h-nr">${esc(u.nr)}</b>${u.standort ? ` <span class="h-st">${esc(u.standort)}</span>` : ''}` : `<b>${esc(u.standort || u.noun)}</b>`;
 const unitSub = (u) => [u.typ, u.nr && `${u.nrLabel} ${u.nr}`].filter(Boolean).join(' · ');
 const $app = document.getElementById('app');
 // Laptop / PC (Maus, großer Bildschirm): eigene, dichte Oberfläche. Handy und Tablet bleiben unverändert.
@@ -561,7 +561,7 @@ function topBar() {
       <button class="icon-btn" data-act="home" aria-label="Zur Übersicht">✕</button>
       <button class="bar-title as-btn" data-act="jump">
         <span class="small muted">${esc(inspTitle(insp))}</span>
-        <span class="t">${esc(unitHead(unitOf(insp)))} <span class="caret">▾</span></span>
+        <span class="t"><span class="t-main">${unitHead(unitOf(insp))}</span> <span class="caret">▾</span></span>
       </button>
       <span id="saved" class="saved ok">✓ gespeichert</span>
       <button class="icon-btn" data-act="menu" data-for="insp" data-id="${insp.id}" aria-label="Mehr">⋯</button>
@@ -2014,7 +2014,7 @@ async function renderDoor(id) {
   };
   const log = (g.log || []).slice().reverse();
   $app.innerHTML = `
-    ${regBar('#/o', `${u.nr ? `<span class="nr-tag">${esc(u.nr)}</span> ` : ''}${esc(u.standort || `${u.noun} ohne Standort`)}`, `${esc(u.noun)} · ${esc(sname(st))}`,
+    ${regBar('#/o', u.nr ? unitHead(u) : esc(u.standort || `${u.noun} ohne Standort`), `${esc(u.noun)} · ${esc(sname(st))}`,
       `${DESK ? `<button class="tb-btn primary" data-act="paperNew" data-id="${g.id}">📄 Altes Protokoll (Papier) nachtragen</button>` : ''}<button class="${DESK ? 'tb-btn icon' : 'icon-btn'}" data-act="menu" data-for="gate" data-id="${g.id}" aria-label="Mehr">⋯</button>`)}
     <main class="${DESK ? 'dk-page' : 'home'} reg-page">
       ${twins.length ? `<div class="dup-box"><p><b>⚠ ${esc(u.nrLabel)} ${esc(u.nr)} gibt es an diesem Objekt ${twins.length === 1 ? 'noch einmal' : `noch ${twins.length}-mal`}.</b> Bitte prüfen, ob es dieselbe ${esc(u.noun)} ist, und die doppelte löschen.</p>
@@ -2520,9 +2520,9 @@ document.addEventListener('input', (e) => {
     if (g === tpl.unit.group && k === tpl.unit.nr) { clearTimeout(dupTimer); dupTimer = setTimeout(checkDupes, 350); }
     updChgNote(g, k);
     if (DESK) { // Titel oben und links mitführen, die Seite wird nicht neu aufgebaut
-      const u = unitOf(insp), bt = document.querySelector('.bar .bar-title .t'), nt = document.querySelector('.dn-title b');
-      if (bt?.firstChild) bt.firstChild.textContent = `${unitHead(u)} `;
-      if (nt) nt.textContent = [u.nr && `${u.nrLabel} ${u.nr}`, u.standort || `${u.noun} ohne Standort`].filter(Boolean).join(' · ');
+      const u = unitOf(insp), bt = document.querySelector('.bar .bar-title .t-main'), nt = document.querySelector('.dn-title .dn-h');
+      if (bt) bt.innerHTML = unitHead(u);
+      if (nt) nt.innerHTML = unitHead(u);
     }
     return saveSoon();
   }
@@ -2658,7 +2658,7 @@ async function renderNav() {
     const u = unitOf(insp);
     nav.innerHTML = `
       <button class="dn-back" data-act="home">‹ ${insp.paper ? 'Zurück' : insp.visitId ? 'Zum Termin' : 'Übersicht'}</button>
-      <div class="dn-title"><b>${esc([u.nr && `${u.nrLabel} ${u.nr}`, u.standort || `${u.noun} ohne Standort`].filter(Boolean).join(' · '))}</b><span>${esc(u.noun)} · ${esc(inspTitle(insp))}</span></div>
+      <div class="dn-title"><span class="dn-h">${unitHead(u)}</span><span>${esc(u.noun)} · ${esc(inspTitle(insp))}</span></div>
       ${sideSteps()}`;
     return;
   }

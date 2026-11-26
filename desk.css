@@ -302,3 +302,6 @@ html.desk .todo-wrap { padding: 6px 14px; }
 html.desk .todo-card { margin-bottom: 12px; }
 html.desk .dc-lbl .todo-box { font-size: .95em; }
 html.desk .learn-sg { left: 0 !important; right: 0; }
+html.desk .dn-title .dn-h { color: var(--ink); font-size: 1.05em; }
+html.desk .dn-title .dn-h .h-st { color: var(--ink); font-size: .85em; }
+html.desk .dn-title .dn-h span { text-transform: none; letter-spacing: 0; }

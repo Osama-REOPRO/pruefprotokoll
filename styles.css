@@ -444,3 +444,7 @@ a.big-btn.as-a { display: flex; margin-bottom: 12px; }
 /* Vorschläge aus früheren Einträgen */
 .inwrap { position: relative; }
 .learn-sg { max-height: 320px; overflow-y: auto; }
+/* Titel: Nummer fett, Standort daneben kleiner */
+.h-nr { font-weight: 800; }
+.h-st { font-weight: 400; font-size: .82em; opacity: .9; }
+.dn-title .dn-h { display: block; }
