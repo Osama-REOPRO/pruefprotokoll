@@ -448,3 +448,5 @@ a.big-btn.as-a { display: flex; margin-bottom: 12px; }
 .h-nr { font-weight: 800; }
 .h-st { font-weight: 400; font-size: .82em; opacity: .9; }
 .dn-title .dn-h { display: block; }
+/* Abschnittskopf: auf dem Handy wie bisher untereinander */
+.sec-line { display: contents; }

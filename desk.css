@@ -305,3 +305,10 @@ html.desk .learn-sg { left: 0 !important; right: 0; }
 html.desk .dn-title .dn-h { color: var(--ink); font-size: 1.05em; }
 html.desk .dn-title .dn-h .h-st { color: var(--ink); font-size: .85em; }
 html.desk .dn-title .dn-h span { text-transform: none; letter-spacing: 0; }
+/* Abschnittskopf in einer Zeile: Titel, Zähler, Schalter, Werkzeuge; ohne „6 / 13“ */
+html.desk .sec-title .sec-n { display: none; }
+html.desk .sec-line { display: flex; align-items: center; flex-wrap: wrap; gap: 6px 14px; margin: 2px 0 8px; }
+html.desk .sec-line .sec-title { margin: 0; font-size: 1.3em; }
+html.desk .sec-line .sec-tools, html.desk .sec-line .sec-sw { margin: 0; }
+html.desk .dk-sec { padding-bottom: 14px; margin-bottom: 14px; }
+html.desk .dn-title .dn-h, html.desk .dn-title .dn-h b { text-transform: none; letter-spacing: 0; }

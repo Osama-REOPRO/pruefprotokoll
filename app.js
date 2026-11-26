@@ -833,8 +833,7 @@ function renderSection(sec) {
   if (secOff(sec)) {
     if (paint(`${topBar()}
       <main class="step">
-        ${secTitle()}
-        ${secSwitch(step)}
+        <div class="sec-line">${secTitle()}${secSwitch(step)}</div>
         <p class="muted off-note">Ausgeschaltet: diesen Abschnitt hat diese ${esc(unitOf(insp).noun)} nicht. Er wird ausgeblendet und beim nächsten Mal auch.</p>
       </main>
       ${bottomBar('Weiter ›')}`)) return;
@@ -857,6 +856,7 @@ function renderSection(sec) {
     <main class="step">
       ${summary}
       ${first && !DESK ? todoListCard() : ''}
+      <div class="sec-line">
       ${secTitle()}
       ${secSwitch(step)}
       <div class="sec-tools">
@@ -864,7 +864,7 @@ function renderSection(sec) {
         <button class="tool ok" data-act="allOk" data-step="${step}" ${untouched.length ? '' : 'disabled'}>✓ Rest o.B.</button>
         <button class="tool clr" data-act="clearSec" data-step="${step}" ${secHasData(step) ? '' : 'disabled'} title="Alle Häkchen, Notizen und Fotos dieses Abschnitts entfernen">⌫ Leeren</button>
       </div>
-      ${DESK ? `<div class="dhead"><span>Prüfpunkt</span><span>${(tpl.states || ['ok', 'b']).map(v => STATE_BTN[v][2]).join(' · ')}</span><span>Notiz (steht neben dem Kästchen)</span></div>` : ''}
+      </div>
       ${sec.items.map(rowHTML).join('')}
       ${checkBtn()}
     </main>
