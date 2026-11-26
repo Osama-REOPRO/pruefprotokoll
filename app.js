@@ -241,7 +241,9 @@ function spySet(cur) {
 }
 
 // ---------- Routing ----------
-let lastHash = '';
+let lastHash = '', prevHash = '', listBack = '';
+const backOf = { o: '#/o', k: '#/k' };
+const screenOf = (h) => (h || '').replace(/^#\/?/, '').split('/').slice(0, 2).join('/');
 // Handbuch: merken, woher man kam, damit ✕ genau dorthin (und an dieselbe Stelle) zurückführt
 let guideReturn = null, pendingY = null;
 const isGuide = (h) => /^#\/handbuch/.test(h || '');
@@ -253,12 +255,18 @@ async function route() {
 }
 async function routeInner() {
   await flushReg();
+  prevHash = lastHash;
   if (location.hash !== lastHash) { lastHash = location.hash; window.scrollTo(0, 0); }
   closeJump();
   closeZoom();
   document.getElementById('snack').classList.remove('show');
   const h = location.hash.replace(/^#\/?/, '');
   const parts = h.split('/');
+  if (!['p', 'd', 'druck', 'druck-t', 'handbuch'].includes(parts[0])) {
+    // Woher man kam: Türseite, Objekt und Kunde führen mit ‹ genau dorthin zurück
+    if ((parts[0] === 'o' || parts[0] === 'k') && parts[1] && !/^#\/(d|p)\//.test(prevHash) && screenOf(prevHash) !== screenOf(location.hash)) backOf[parts[0]] = prevHash || `#/${parts[0]}`;
+    listBack = location.hash || '#/';
+  }
   if ((parts[0] === 'druck' || parts[0] === 'druck-t') && parts[1]) {
     if (insp) await saveNow();
     releaseAwake();
@@ -288,14 +296,16 @@ async function routeInner() {
     if (migrate) await saveVisit();
     return parts[2] === 'edit' ? renderVisitEdit() : renderVisit();
   }
-  if (parts[0] === 'o' || parts[0] === 'd') {
+  if (['o', 'd', 'k', 'tueren'].includes(parts[0])) {
     if (insp) await saveNow();
     insp = null; tpl = null; visit = null;
     releaseAwake();
     settings.set('last', null);
     if (parts[0] === 'd' && parts[1]) { loadLearn(); return renderDoor(parts[1]); }
-    curDoor = null;
-    if (parts[1]) { settings.set('doorFilter', { ...DF0, site: parts[1] }); history.replaceState(null, '', '#/o'); lastHash = '#/o'; }
+    curDoor = null; doorScope = null;
+    if (screenOf(location.hash) !== screenOf(prevHash)) { regQuery = ''; selDoors = new Set(); }
+    if (parts[0] === 'k') return parts[1] ? renderKunde(parts[1]) : renderKunden();
+    if (parts[0] === 'o') return parts[1] ? renderObjekt(parts[1]) : renderObjekte();
     return renderDoors();
   }
   if (parts[0] === 'p' && parts[1]) {
@@ -411,7 +421,7 @@ async function renderHome() {
           <span class="pill ${cls === 'maengel' ? 'red' : cls === 'fertig' ? 'green' : ''}">${esc(label)}</span></button></div>`;
       }).join('') || '<p class="muted">Nichts gefunden.</p>'}</section>` : ''}
       ${sr ? '' : `<button class="big-btn primary" data-act="newVisit">＋ Neuer Termin</button>
-      <a class="big-btn as-a" href="#/o">🚪 Türen und Tore</a>
+      <div class="nav3"><a class="big-btn as-a" href="#/k">👤 Kunden</a><a class="big-btn as-a" href="#/o">🏢 Objekte</a><a class="big-btn as-a" href="#/tueren">🚪 Türen</a></div>
       <label class="big-btn recv-btn">⇅ Termin empfangen (Datei öffnen)<input type="file" accept=".json,application/json" data-import hidden></label>
       ${open.length ? `<section class="card"><h2>Termine</h2>${open.map(visitRow).join('')}</section>` : ''}
       ${done.length ? `<section class="card"><h2>Erledigt</h2>${done.slice(0, 30).map(visitRow).join('')}</section>` : ''}
@@ -1279,7 +1289,7 @@ async function runDelete(p) {
   if (!p) return;
   const I = new Set(p.inspections);
   if (insp && I.has(insp.id)) { p.backTo = insp.paper ? (insp.returnTo || `#/d/${insp.gateId}`) : insp.visitId && !p.visits.includes(insp.visitId) ? `#/t/${insp.visitId}` : '#/'; clearTimeout(saveTimer); insp = null; tpl = null; }
-  if (p.kind === 'gate' && curDoor?.id === p.id) { p.backTo = `#/o/${curDoor.siteId}`; curDoor = null; }
+  if (p.kind === 'gate' && curDoor?.id === p.id) { p.backTo = listBack && !/^#\/d\//.test(listBack) ? listBack : `#/o/${curDoor.siteId}`; curDoor = null; }
   const photos = (await db.all('photos')).filter(ph => I.has(ph.inspectionId));
   for (const ph of photos) await db.del('photos', ph.id);
   for (const id of p.inspections) await db.del('inspections', id);
@@ -1347,7 +1357,11 @@ async function openMenu(forWhat, id) {
     const st = await db.get('sites', id); if (!st) return;
     const c = st.customerId && await db.get('customers', st.customerId);
     title = [st.name, st.strasse].filter(Boolean).join(', ') || 'Objekt';
-    rows = [btn('openSite', st.id, '🚪 Alle Türen an diesem Objekt'), btn('editSite', st.id, '✎ Objekt bearbeiten'), del('site', st.id, 'Objekt löschen'), ...(c ? [del('customer', c.id, `Kunde löschen: ${c.name || ''}`)] : [])];
+    rows = [...(/^#\/o\//.test(location.hash) ? [] : [btn('openSite', st.id, '🏢 Objekt öffnen')]), del('site', st.id, 'Objekt löschen')];
+  } else if (forWhat === 'customer') {
+    const c = await db.get('customers', id); if (!c) return;
+    title = c.name || 'Kunde';
+    rows = [...(/^#\/k\//.test(location.hash) ? [] : [go(`#/k/${c.id}`, '👤 Kunde öffnen')]), btn('newSiteFor', c.id, '＋ Objekt für diesen Kunden'), del('customer', c.id, 'Kunde löschen')];
   } else if (forWhat === 'gate') {
     const g = await db.get('gates', id); if (!g) return;
     title = g.standort || g.label || 'Tür / Tor';
@@ -1739,6 +1753,7 @@ function doorData(i) {
 const protoSort = (a, b) => dateKey(b.datum).localeCompare(dateKey(a.datum)) || String(b.finishedAt || '').localeCompare(String(a.finishedAt || ''));
 const protosOf = (gid, inspections) => inspections.filter(i => i.gateId === gid && i.status === 'done').sort(protoSort);
 async function latestProto(gid, exclId = null) { return protosOf(gid, await db.all('inspections')).find(i => i.id !== exclId) || null; }
+const hasName = (s) => !!(s?.name || s?.strasse);
 const sname = (s) => [s?.name, s?.strasse].filter(Boolean).join(', ') || 'Objekt ohne Namen';
 const anDer = (kind) => kind === 'tuer' ? 'an der Tür' : 'am Tor';
 const changeText = (list) => list.map(c => `${c.field} ${c.from} → ${c.to}`).join(', ');
@@ -1895,68 +1910,210 @@ const regBar = (back, title, sub, right = '') => DESK
   : `<header class="bar"><button class="icon-btn" data-act="menuGo" data-href="${back || '#/'}" aria-label="Zurück">‹</button><div class="bar-title">${sub ? `<span class="small muted block">${sub}</span>` : ''}${title}</div>${right}</header>`;
 const panel = (h, body, cls = '') => DESK ? `<section class="dk-panel ${cls}"><h2>${h}</h2>${body}</section>` : `<section class="card ${cls}"><h2>${h}</h2>${body}</section>`;
 
-// Eine Liste aller Türen und Tore. Objekt, Kunde, Art und Hersteller sind Filter, frei kombinierbar.
-const DF0 = { site: '', kunde: '', kind: '', herst: '', etage: '' };
-const getDF = () => ({ ...DF0, ...(settings.get('doorFilter', {}) || {}) });
+// Türenliste: gleiche Suche, Filter und Gruppierung auf „Türen und Tore“ und auf jedem Objekt.
+// Auf einem Objekt (doorScope) ist das Objekt fest, gruppiert wird dort standardmäßig nach Etage.
+const DF0 = { site: '', kunde: '', kind: '', herst: '', etage: '', group: '' };
+let doorScope = null;
+const getDF = () => {
+  if (!doorScope) return { ...DF0, ...(settings.get('doorFilter', {}) || {}) };
+  const s = settings.get('objFilter', {}) || {};
+  return { ...DF0, group: 'etage', ...(s.id === doorScope ? s : {}), site: doorScope, id: doorScope };
+};
+const setDF = (F) => settings.set(doorScope ? 'objFilter' : 'doorFilter', doorScope ? { ...F, id: doorScope } : F);
+const rerenderDL = () => doorScope ? renderObjekt(doorScope) : renderDoors();
 const herstOf = (g) => { const d = g.data || {}; return (d.tor || d.grund || {}).hersteller || Object.values(d).find(x => x?.hersteller)?.hersteller || ''; };
-async function renderDoors() {
-  const R = await regData(), q = regQuery.trim(), F = getDF();
+const GROUPS = [['', 'nichts'], ['etage', 'Etage'], ['objekt', 'Objekt'], ['kunde', 'Kunde'], ['art', 'Art'], ['herst', 'Hersteller']];
+function doorList(R, F, q) {
+  const scoped = !!doorScope;
   const sitesUsed = R.sites.filter(x => x.name || x.strasse || R.gates.some(g => g.siteId === x.id)).sort((a, b) => sname(a).localeCompare(sname(b), 'de'));
   // Kunden-Auswahl: bei gewähltem Objekt nur die dort vorkommenden
   const kIds = new Set(R.gates.filter(g => !F.site || g.siteId === F.site).map(g => g.customerId).filter(Boolean));
   if (F.kunde) kIds.add(F.kunde);
   const kunden = R.custs.filter(c => c.name && (kIds.has(c.id) || (!F.site && R.sites.some(x => x.customerId === c.id)))).sort((a, b) => a.name.localeCompare(b.name, 'de'));
-  const hersts = uniq(R.gates.map(herstOf)).sort((a, b) => a.localeCompare(b, 'de'));
-  const fSiteRec = F.site && R.sById.get(F.site), floors = floorsOf(fSiteRec), fIds = new Set(floors.map(f => f.id));
+  const base = R.gates.filter(g => !F.site || g.siteId === F.site);
+  const hersts = uniq(base.map(herstOf)).sort((a, b) => a.localeCompare(b, 'de'));
+  const fSite = F.site && R.sById.get(F.site), floors = floorsOf(fSite), fIds = new Set(floors.map(f => f.id));
   const etOk = (g) => !F.site || !F.etage || (F.etage === 'none' ? !fIds.has(g.etageId) : g.etageId === F.etage);
-  let list = R.gates.filter(g => (!F.site || g.siteId === F.site) && (!F.kunde || g.customerId === F.kunde) && (!F.kind || gateKind(g) === F.kind) && (!F.herst || herstOf(g) === F.herst) && etOk(g));
+  let list = base.filter(g => (!F.kunde || g.customerId === F.kunde) && (!F.kind || gateKind(g) === F.kind) && (!F.herst || herstOf(g) === F.herst) && etOk(g));
   const total = list.length;
   list = q ? list.map(g => [g, doorScore(g, q, R)]).filter(([, sc]) => sc > 0).sort((a, b) => b[1] - a[1] || byNr(a[0], b[0])).map(([g]) => g)
     : list.sort((a, b) => sname(R.sById.get(a.siteId)).localeCompare(sname(R.sById.get(b.siteId)), 'de') || byNr(a, b));
   const dups = regDupSet(R.gates);
-  const sel = (k, label, opts) => `<label class="flt ${F[k] ? 'on' : ''}"><span class="lbl">${label}</span><select class="field" data-flt="${k}">
-    <option value="">Alle</option>${opts.map(([v, t]) => `<option value="${esc(v)}" ${F[k] === v ? 'selected' : ''}>${esc(t)}</option>`).join('')}</select></label>`;
-  const anyF = Object.values(F).some(Boolean);
+  const sel = (k, label, opts, all = 'Alle') => `<label class="flt ${F[k] ? 'on' : ''}"><span class="lbl">${label}</span><select class="field" data-flt="${k}">
+    <option value="">${all}</option>${opts.map(([v, t]) => `<option value="${esc(v)}" ${F[k] === v ? 'selected' : ''}>${esc(t)}</option>`).join('')}</select></label>`;
+  const groups = GROUPS.filter(([k]) => k && (k === 'etage' ? !!F.site : k === 'objekt' ? !F.site : true));
+  const group = groups.some(([k]) => k === F.group) ? F.group : '';
+  const anyF = ['kunde', 'kind', 'herst', 'etage', ...(scoped ? [] : ['site'])].some(k => F[k]);
   const filters = `<div class="flt-bar">
-    ${sel('site', 'Objekt', sitesUsed.map(x => [x.id, sname(x)]))}
+    ${scoped ? '' : sel('site', 'Objekt', sitesUsed.map(x => [x.id, sname(x)]))}
     ${F.site ? sel('etage', 'Etage', [...floors.map(f => [f.id, f.name]), ['none', 'ohne Etage']]) : ''}
     ${sel('kunde', 'Kunde', kunden.map(c => [c.id, c.name]))}
     ${sel('kind', 'Art', [['tuer', 'Türen'], ['tor', 'Tore']])}
     ${hersts.length ? sel('herst', 'Hersteller', hersts.map(h => [h, h])) : ''}
+    <label class="flt flt-g"><span class="lbl">Gruppieren nach</span><select class="field" data-flt="group"><option value="">nichts</option>${groups.map(([k, t]) => `<option value="${k}" ${group === k ? 'selected' : ''}>${t}</option>`).join('')}</select></label>
     ${anyF ? '<button class="flt-x" data-act="fltReset">Filter zurücksetzen</button>' : ''}</div>`;
   const opts = { site: !F.site, kunde: !F.kunde, sel: true };
-  const fSite = F.site && R.sById.get(F.site), fKunde = F.kunde && R.cById.get(F.kunde);
-  const info = fSite || fKunde ? `<p class="muted small flt-info">${fSite ? `<span>🏢 ${esc([sname(fSite), fSite.plzOrt].filter(Boolean).join(', '))} <button class="mini-link" data-act="editSite" data-id="${fSite.id}">✎ Objekt</button></span>` : ''}
-    ${fKunde ? `<span>👤 ${esc([fKunde.name, fKunde.strasse, fKunde.plzOrt].filter(Boolean).join(', '))} <button class="mini-link" data-act="editKunde" data-id="${fKunde.id}">✎ Kunde</button></span>` : ''}</p>` : '';
-  const addBtns = (cls) => `<button class="${cls}" data-act="newDoorAsk" data-kind="tuer">＋ Tür</button><button class="${cls}" data-act="newDoorAsk" data-kind="tor">＋ Tor</button>`;
+  const fKunde = F.kunde && R.cById.get(F.kunde);
+  const info = !scoped && (fSite || fKunde) ? `<p class="muted small flt-info">${fSite ? `<span>🏢 <a class="link-ish" href="#/o/${fSite.id}">${esc([sname(fSite), fSite.plzOrt].filter(Boolean).join(', '))} ›</a></span>` : ''}
+    ${fKunde ? `<span>👤 <a class="link-ish" href="#/k/${fKunde.id}">${esc([fKunde.name, fKunde.plzOrt].filter(Boolean).join(', '))} ›</a></span>` : ''}</p>` : '';
   const count = `${list.length}${list.length !== total ? ` von ${total}` : ''}`;
+  const head = (h, n) => DESK ? `<tr class="dt-group"><td colspan="12"><b>${esc(h)}</b> <span class="muted">${n}</span></td></tr>` : `<h3 class="pair-h fl-h">${esc(h)} <span class="muted small">${n}</span></h3>`;
+  const body = list.length
+    ? doorTable(groupList(list, q ? '' : group, R, floors, fIds).map(([h, gs]) => (h ? head(h, gs.length) : '') + gs.map(g => doorRow(g, R, { ...opts, dup: dups.has(g.id) })).join('')).join(''), opts)
+    : `<p class="${DESK ? 'dk-empty' : 'muted'}">${total || q ? 'Nichts passt zu Suche und Filtern.' : base.length ? 'Keine Tür passt zu den Filtern.' : scoped ? 'Noch keine Türen an diesem Objekt. Mit „＋ Tür“ oder „＋ Tor“ anlegen.' : 'Noch keine Türen. Mit „＋ Tür“ anlegen und dann die alten Papierprotokolle nachtragen. Türen aus Terminen erscheinen hier automatisch.'}</p>`;
+  const title = F.kind === 'tor' ? 'Tore' : F.kind === 'tuer' ? 'Türen' : 'Türen und Tore';
+  return { filters, info, title, count, body };
+}
+const addDoorBtns = (cls) => `<button class="${cls}" data-act="newDoorAsk" data-kind="tuer">＋ Tür</button><button class="${cls}" data-act="newDoorAsk" data-kind="tor">＋ Tor</button>`;
+const selBar = () => `<div class="sel-bar ${selDoors.size ? '' : 'hidden'}" id="selBar"><span id="selN">${selDoors.size} ausgewählt</span>
+      <button class="sel-b primary" data-act="moveDoorsAsk">Kunde ändern ›</button><button class="sel-b" data-act="selClear">Aufheben</button></div>`;
+async function renderDoors() {
+  doorScope = null;
+  const R = await regData(), D = doorList(R, getDF(), regQuery.trim());
   $app.innerHTML = `
-    ${regBar('#/', 'Türen und Tore', '', DESK ? `${addBtns('tb-btn primary')}${searchBox('regSearch', regQuery, 'Suchen: Tür-Nr., Standort, Objekt …  ( / )')}` : '')}
+    ${regBar('#/', 'Türen und Tore', '', DESK ? `${addDoorBtns('tb-btn primary')}${searchBox('regSearch', regQuery, 'Suchen: Tür-Nr., Standort, Objekt …  ( / )')}` : '')}
     <main class="${DESK ? 'dk-page' : 'home'} reg-page">
       ${DESK ? '' : searchBox('regSearch', regQuery, 'Suchen: Tür-Nr., Standort, Objekt …')}
-      ${filters}
-      ${info}
-      ${panel(`${F.kind === 'tor' ? 'Tore' : F.kind === 'tuer' ? 'Türen' : 'Türen und Tore'} <span class="muted small">${count}</span>`, list.length
-        ? doorTable(groupByFloor(list, F, q, floors, fIds).map(([h, gs]) => (h ? (DESK ? `<tr class="dt-group"><td colspan="12"><b>${esc(h)}</b> <span class="muted">${gs.length}</span></td></tr>` : `<h3 class="pair-h fl-h">${esc(h)} <span class="muted small">${gs.length}</span></h3>`) : '')
-            + gs.map(g => doorRow(g, R, { ...opts, dup: dups.has(g.id) })).join('')).join(''), opts)
-        : `<p class="${DESK ? 'dk-empty' : 'muted'}">${total || q ? 'Nichts passt zu Suche und Filtern.' : R.gates.length ? 'Keine Tür passt zu den Filtern.' : 'Noch keine Türen. Mit „＋ Tür“ anlegen und dann die alten Papierprotokolle nachtragen. Türen aus Terminen erscheinen hier automatisch.'}</p>`)}
-      ${DESK ? '' : `<div class="two">${addBtns('big-btn primary')}</div>`}
+      ${D.filters}
+      ${D.info}
+      ${panel(`${D.title} <span class="muted small">${D.count}</span>`, D.body)}
+      ${DESK ? '' : `<div class="two">${addDoorBtns('big-btn primary')}</div>`}
     </main>
-    <div class="sel-bar ${selDoors.size ? '' : 'hidden'}" id="selBar"><span id="selN">${selDoors.size} ausgewählt</span>
-      <button class="sel-b primary" data-act="moveDoorsAsk">Kunde ändern ›</button><button class="sel-b" data-act="selClear">Aufheben</button></div>`;
+    ${selBar()}`;
 }
-// Ein Objekt gewählt und nicht gesucht: Türen nach Etage gruppiert, von oben nach unten wie im Haus
-function groupByFloor(list, F, q, floors, fIds) {
-  if (!F.site || q || !floors.length) return [[null, list]];
-  const groups = floors.slice().reverse().map(f => [f.name, list.filter(g => g.etageId === f.id)]);
-  groups.push(['Ohne Etage', list.filter(g => !fIds.has(g.etageId))]);
-  return groups.filter(([, gs]) => gs.length);
+// Gruppen in Anzeige-Reihenfolge; Etagen von oben nach unten wie im Haus
+function groupList(list, key, R, floors, fIds) {
+  if (!key) return [[null, list]];
+  if (key === 'etage') {
+    if (!floors.length) return [[null, list]];
+    const groups = floors.slice().reverse().map(f => [f.name, list.filter(g => g.etageId === f.id)]);
+    groups.push(['Ohne Etage', list.filter(g => !fIds.has(g.etageId))]);
+    return groups.filter(([, gs]) => gs.length);
+  }
+  const lab = { objekt: (g) => sname(R.sById.get(g.siteId)) || 'Ohne Objekt', kunde: (g) => R.cById.get(g.customerId)?.name || 'Ohne Kunde', art: (g) => gateKind(g) === 'tor' ? 'Tore' : 'Türen', herst: (g) => herstOf(g) || 'Ohne Hersteller' }[key];
+  const m = new Map(); list.forEach(g => { const k = lab(g); if (!m.has(k)) m.set(k, []); m.get(k).push(g); });
+  return [...m].sort((a, b) => a[0].startsWith('Ohne ') - b[0].startsWith('Ohne ') || a[0].localeCompare(b[0], 'de', { numeric: true }));
+}
+
+// ----- Kunden und Objekte: eigene Listen und eigene Seiten -----
+let kQuery = '', oQuery = '';
+const txtHit = (q, parts) => normTxt(q).split(/\s+/).filter(Boolean).every(t => normTxt(parts.join(' ')).includes(t));
+const sitesOfKunde = (R, cid) => R.sites.filter(s => s.customerId === cid || (s.kundenIds || []).includes(cid) || R.gates.some(g => g.siteId === s.id && g.customerId === cid));
+const visitsOfKunde = (R, cid) => R.visits.filter(v => pairsOf(v).some(p => p.customerId === cid)).sort((a, b) => dateKey(b.datum).localeCompare(dateKey(a.datum)));
+const nDoors = (n) => `${n} ${n === 1 ? 'Tür/Tor' : 'Türen/Tore'}`;
+const fold = (key, h, body, open) => {
+  const o = settings.get('fold:' + key, open);
+  return `<details class="${DESK ? 'dk-panel' : 'card'} fold" data-fold="${key}" ${o ? 'open' : ''}><summary><h2>${h}</h2></summary><div class="fold-body">${body}</div></details>`;
+};
+document.addEventListener('toggle', (e) => { const k = e.target.dataset?.fold; if (k) settings.set('fold:' + k, e.target.open); }, true);
+const fieldGrid = (fields, rec, attr, idAttr) => `<div class="grid ${DESK ? 'dk-form' : ''}">${fields.map(f => `<label class="fld ${f.half ? 'half' : ''}"><span class="lbl">${esc(f.label)}</span><input class="field" ${attr}="${f.key}" ${idAttr}="${rec.id}" value="${esc(rec[f.key])}" autocomplete="off"></label>`).join('')}</div>`;
+
+async function renderKunden() {
+  const R = await regData(), q = kQuery.trim();
+  const list = R.custs.filter(c => c.name || R.gates.some(g => g.customerId === c.id))
+    .filter(c => !q || txtHit(q, [c.name, c.zusatz, c.strasse, c.plzOrt, c.ansprech, c.tel]))
+    .sort((a, b) => (a.name || '~').localeCompare(b.name || '~', 'de'));
+  const row = (c) => {
+    const st = sitesOfKunde(R, c.id), n = R.gates.filter(g => g.customerId === c.id).length, vs = visitsOfKunde(R, c.id);
+    return DESK ? `<tr class="dt-click" data-act="menuGo" data-href="#/k/${c.id}"><td><b>${esc(c.name || 'Kunde ohne Namen')}</b></td><td>${esc([c.strasse, c.plzOrt].filter(Boolean).join(', '))}</td>
+        <td class="nw">${st.length}</td><td class="nw">${n}</td><td class="nw">${esc(vs[0]?.datum || '–')}</td></tr>`
+      : `<div class="row-wrap"><button class="list-row" data-act="menuGo" data-href="#/k/${c.id}"><span><strong>${esc(c.name || 'Kunde ohne Namen')}</strong><br>
+        <span class="muted small">${esc([[c.strasse, c.plzOrt].filter(Boolean).join(', '), `${st.length} ${st.length === 1 ? 'Objekt' : 'Objekte'}`, nDoors(n)].filter(Boolean).join(' · '))}</span></span><span class="chev">›</span></button></div>`;
+  };
+  $app.innerHTML = `
+    ${regBar('#/', 'Kunden', '', DESK ? `<button class="tb-btn primary" data-act="newKunde">＋ Neuer Kunde</button>${searchBox('kSearch', kQuery, 'Kunde suchen …  ( / )')}` : '')}
+    <main class="${DESK ? 'dk-page' : 'home'} reg-page">
+      ${DESK ? '' : `${searchBox('kSearch', kQuery, 'Kunde suchen: Name, Ort …')}<button class="big-btn primary" data-act="newKunde">＋ Neuer Kunde</button>`}
+      ${panel(`Kunden <span class="muted small">${list.length}</span>`, list.length ? (DESK ? `<table class="dt"><thead><tr><th>Name</th><th>Adresse</th><th>Objekte</th><th>Türen und Tore</th><th>Letzter Termin</th></tr></thead><tbody>${list.map(row).join('')}</tbody></table>` : list.map(row).join(''))
+        : `<p class="${DESK ? 'dk-empty' : 'muted'}">${q ? 'Kein Kunde passt zur Suche.' : 'Noch keine Kunden.'}</p>`)}
+    </main>`;
+}
+async function renderKunde(id) {
+  const R = await regData(), c = R.cById.get(id);
+  if (!c) { location.hash = '#/k'; return; }
+  const kg = TEMPLATE_TORE.header.find(x => x.id === 'kunde');
+  const sites = sitesOfKunde(R, id).sort((a, b) => sname(a).localeCompare(sname(b), 'de')), vs = visitsOfKunde(R, id);
+  const nAll = R.gates.filter(g => g.customerId === id).length;
+  const sRow = (s) => {
+    const mine = R.gates.filter(g => g.siteId === s.id && g.customerId === id).length, all = R.gates.filter(g => g.siteId === s.id).length;
+    const others = kundenAt(s, R.gates).filter(k => k !== id).map(k => R.cById.get(k)?.name).filter(Boolean);
+    const cnt = `${nDoors(mine)}${all > mine ? ` (von ${all})` : ''}`;
+    return DESK ? `<tr class="dt-click" data-act="menuGo" data-href="#/o/${s.id}"><td><b>${esc(sname(s))}</b></td><td>${esc(s.plzOrt || '')}</td><td class="nw">${cnt}</td><td class="nw">${floorsOf(s).length || '–'}</td><td>${esc(others.join(', '))}</td></tr>`
+      : `<div class="row-wrap"><button class="list-row" data-act="menuGo" data-href="#/o/${s.id}"><span><strong>${esc(sname(s))}</strong><br>
+        <span class="muted small">${esc([s.plzOrt, cnt, others.length ? 'auch: ' + others.join(', ') : ''].filter(Boolean).join(' · '))}</span></span><span class="chev">›</span></button></div>`;
+  };
+  const vRow = (v) => {
+    const its = R.inspections.filter(i => i.visitId === v.id), d = its.filter(i => i.status === 'done').length;
+    return DESK ? `<tr class="dt-click" data-act="openVisit" data-id="${v.id}"><td class="nw"><b>${esc(v.datum || '–')}</b></td><td>${esc(visitTitle(v))}</td><td class="nw">${d} / ${its.length}</td></tr>`
+      : `<div class="row-wrap"><button class="list-row" data-act="openVisit" data-id="${v.id}"><span><strong>${esc(v.datum || 'ohne Datum')}</strong> <span class="muted small">${esc(visitTitle(v))}</span><br><span class="muted small">${d} von ${its.length} fertig</span></span><span class="chev">›</span></button></div>`;
+  };
+  $app.innerHTML = `
+    ${regBar(backOf.k, `<span id="scrT">${esc(c.name || 'Neuer Kunde')}</span>`, 'Kunde', `${DESK ? '<button class="tb-btn primary" data-act="newSiteFor" data-id="' + id + '">＋ Objekt</button>' : ''}<button class="${DESK ? 'tb-btn icon' : 'icon-btn'}" data-act="menu" data-for="customer" data-id="${id}" aria-label="Mehr">⋯</button>`)}
+    <main class="${DESK ? 'dk-page' : 'home'} reg-page ent-page">
+      <div class="ent-top">
+        ${fold('kData', 'Kundendaten', fieldGrid(kg.fields, c, 'data-ck', 'data-cid') + noteField('customers', id, c.intNote, 'Interne Notiz'), !c.name || DESK)}
+      </div>
+      ${panel(`Objekte <span class="muted small">${sites.length}</span>${DESK ? '' : `<button class="mini-link push-r" data-act="newSiteFor" data-id="${id}">＋ Objekt</button>`}`, sites.length
+        ? (DESK ? `<table class="dt"><thead><tr><th>Objekt</th><th>Ort</th><th>Türen und Tore</th><th>Etagen</th><th>Weitere Kunden</th></tr></thead><tbody>${sites.map(sRow).join('')}</tbody></table>` : sites.map(sRow).join(''))
+        : `<p class="${DESK ? 'dk-empty' : 'muted'}">Noch keine Objekte. Mit „＋ Objekt“ anlegen.</p>`)}
+      ${nAll ? `<p class="muted small"><button class="link-ish" data-act="kundeDoors" data-id="${id}">🚪 Alle ${nDoors(nAll)} dieses Kunden in einer Liste ›</button></p>` : ''}
+      ${panel(`Termine <span class="muted small">${vs.length}</span>`, vs.length ? (DESK ? `<table class="dt"><thead><tr><th>Datum</th><th>Termin</th><th>Fertig</th></tr></thead><tbody>${vs.map(vRow).join('')}</tbody></table>` : vs.map(vRow).join(''))
+        : `<p class="${DESK ? 'dk-empty' : 'muted'}">Noch keine Termine.</p>`)}
+    </main>`;
+  if (!c.name) document.querySelector('input[data-ck="name"]')?.focus();
+}
+async function renderObjekte() {
+  const R = await regData(), q = oQuery.trim();
+  const list = R.sites.filter(s => s.name || s.strasse || R.gates.some(g => g.siteId === s.id))
+    .map(s => ({ s, ks: kundenAt(s, R.gates).map(k => R.cById.get(k)?.name).filter(Boolean) }))
+    .filter(({ s, ks }) => !q || txtHit(q, [s.name, s.strasse, s.plzOrt, ...ks]))
+    .sort((a, b) => (sname(a.s) || '~').localeCompare(sname(b.s) || '~', 'de'));
+  const row = ({ s, ks }) => {
+    const n = R.gates.filter(g => g.siteId === s.id).length, fl = floorsOf(s).length;
+    return DESK ? `<tr class="dt-click" data-act="menuGo" data-href="#/o/${s.id}"><td><b>${esc(sname(s))}</b></td><td>${esc(s.plzOrt || '')}</td><td>${esc(ks.join(', '))}</td><td class="nw">${n}</td><td class="nw">${fl || '–'}</td></tr>`
+      : `<div class="row-wrap"><button class="list-row" data-act="menuGo" data-href="#/o/${s.id}"><span><strong>${esc(sname(s))}</strong><br>
+        <span class="muted small">${esc([s.plzOrt, ks.join(', '), nDoors(n), fl ? `${fl} ${fl === 1 ? 'Etage' : 'Etagen'}` : ''].filter(Boolean).join(' · '))}</span></span><span class="chev">›</span></button></div>`;
+  };
+  $app.innerHTML = `
+    ${regBar('#/', 'Objekte', '', DESK ? `<button class="tb-btn primary" data-act="newSiteFor">＋ Neues Objekt</button>${searchBox('oSearch', oQuery, 'Objekt suchen …  ( / )')}` : '')}
+    <main class="${DESK ? 'dk-page' : 'home'} reg-page">
+      ${DESK ? '' : `${searchBox('oSearch', oQuery, 'Objekt suchen: Name, Straße, Kunde …')}<button class="big-btn primary" data-act="newSiteFor">＋ Neues Objekt</button>`}
+      ${panel(`Objekte <span class="muted small">${list.length}</span>`, list.length ? (DESK ? `<table class="dt"><thead><tr><th>Objekt</th><th>Ort</th><th>Kunden</th><th>Türen und Tore</th><th>Etagen</th></tr></thead><tbody>${list.map(row).join('')}</tbody></table>` : list.map(row).join(''))
+        : `<p class="${DESK ? 'dk-empty' : 'muted'}">${q ? 'Kein Objekt passt zur Suche.' : 'Noch keine Objekte.'}</p>`)}
+    </main>`;
+}
+async function renderObjekt(id) {
+  const R = await regData(), st = R.sById.get(id);
+  if (!st) { location.hash = '#/o'; return; }
+  doorScope = id; curSite = st;
+  const og = TEMPLATE_TORE.header.find(x => x.id === 'objekt');
+  const ks = kundenAt(st, R.gates).map(k => R.cById.get(k)).filter(Boolean);
+  const kChips = ks.map(c => { const n = R.gates.filter(g => g.siteId === id && g.customerId === c.id).length;
+    return `<span class="ent-chip"><a href="#/k/${c.id}">👤 ${esc(c.name || 'ohne Namen')}</a> <span class="muted small">${n}</span>${n ? '' : `<button class="mini-x" data-act="siteKundeDel" data-id="${c.id}" aria-label="Vom Objekt entfernen" title="Vom Objekt entfernen">×</button>`}</span>`; }).join('');
+  const D = doorList(R, getDF(), regQuery.trim());
+  const plan = `<p class="muted small plan-soon">🗺 Grundrisse je Etage, mit den Türen darauf markiert, kommen als Nächstes.</p>`;
+  $app.innerHTML = `
+    ${regBar(backOf.o, `<span id="scrT">${esc(hasName(st) ? sname(st) : 'Neues Objekt')}</span>`, `Objekt${st.plzOrt ? ' · ' + esc(st.plzOrt) : ''}`, `${DESK ? `${addDoorBtns('tb-btn primary')}${searchBox('regSearch', regQuery, 'Tür suchen …  ( / )')}` : ''}<button class="${DESK ? 'tb-btn icon' : 'icon-btn'}" data-act="menu" data-for="site" data-id="${id}" aria-label="Mehr">⋯</button>`)}
+    <main class="${DESK ? 'dk-page' : 'home'} reg-page ent-page">
+      <section class="${DESK ? 'dk-sum' : 'card'} ent-kunden"><span class="muted">Kunden</span> ${kChips || '<span class="muted small">noch keiner</span>'} <button class="mini-link" data-act="siteKundeAdd" data-id="${id}">＋ Kunde</button></section>
+      <div class="ent-top">
+        ${fold('oData', 'Objektdaten', fieldGrid(og.fields, st, 'data-os', 'data-sid') + noteField('sites', id, st.intNote, 'Interne Notiz'), !hasName(st) || DESK)}
+        ${fold('oFloors', `Etagen und Pläne <span class="muted small">${floorsOf(st).length}</span>`, floorsEditor(st) + plan, DESK)}
+      </div>
+      ${DESK ? '' : searchBox('regSearch', regQuery, 'Tür suchen: Nr., Standort …')}
+      ${D.filters}
+      ${panel(`${D.title} <span class="muted small">${D.count}</span>`, D.body)}
+      ${DESK ? '' : `<div class="two">${addDoorBtns('big-btn primary')}</div>`}
+    </main>
+    ${selBar()}`;
+  if (!hasName(st)) document.querySelector('input[data-os="name"]')?.focus();
 }
 // Neue Tür: Objekt und Kunde kommen aus den Filtern, sonst kurz fragen
 async function newDoorAsk(kind) {
-  const F = getDF();
+  const F = getDF(), R = await regData();
   if (F.site && F.kunde) return newDoor(F.site, F.kunde, kind);
-  const R = await regData();
+  const ks = F.site && R.sById.get(F.site) ? kundenAt(R.sById.get(F.site), R.gates) : [];
+  if (ks.length === 1) return newDoor(F.site, ks[0], kind);
   const sites = R.sites.filter(x => x.name || x.strasse).sort((a, b) => sname(a).localeCompare(sname(b), 'de'));
   const custs = R.custs.filter(c => c.name).sort((a, b) => a.name.localeCompare(b.name, 'de'));
   const sheet = document.getElementById('sheet');
@@ -2005,7 +2162,7 @@ function updSelBar() {
 
 async function renderDoor(id) {
   const R = await regData(), g = R.gates.find(x => x.id === id);
-  if (!g) { location.hash = '#/o'; return; }
+  if (!g) { location.hash = '#/tueren'; return; }
   curDoor = g; doorBase = structuredClone(g.data || {});
   const t = TEMPLATES[g.templateId] || TEMPLATE_TORE, u = gateUnit(g), st = R.sById.get(g.siteId), c = R.cById.get(g.customerId);
   const protos = R.inspections.filter(i => i.gateId === id).sort((a, b) => (a.status === 'done') - (b.status === 'done') || protoSort(a, b));
@@ -2034,15 +2191,15 @@ async function renderDoor(id) {
   };
   const log = (g.log || []).slice().reverse();
   $app.innerHTML = `
-    ${regBar('#/o', u.nr ? unitHead(u) : esc(u.standort || `${u.noun} ohne Standort`), `${esc(u.noun)} · ${esc(sname(st))}`,
+    ${regBar(listBack || `#/o/${g.siteId}`, u.nr ? unitHead(u) : esc(u.standort || `${u.noun} ohne Standort`), `${esc(u.noun)} · ${esc(sname(st))}`,
       `${DESK ? `<button class="tb-btn primary" data-act="paperNew" data-id="${g.id}">📄 Altes Protokoll (Papier) nachtragen</button>` : ''}<button class="${DESK ? 'tb-btn icon' : 'icon-btn'}" data-act="menu" data-for="gate" data-id="${g.id}" aria-label="Mehr">⋯</button>`)}
     <main class="${DESK ? 'dk-page' : 'home'} reg-page">
       ${twins.length ? `<div class="dup-box"><p><b>⚠ ${esc(u.nrLabel)} ${esc(u.nr)} gibt es an diesem Objekt ${twins.length === 1 ? 'noch einmal' : `noch ${twins.length}-mal`}.</b> Bitte prüfen, ob es dieselbe ${esc(u.noun)} ist, und die doppelte löschen.</p>
         <div class="dup-acts">${twins.map(x => `<button class="dup-b" data-act="openDoor" data-id="${x.id}">Zur anderen: ${esc(x.standort || 'ohne Standort')} ›</button>`).join('')}</div></div>` : ''}
       <section class="${DESK ? 'dk-sum' : 'card'} door-who">
-        <span><span class="muted">Objekt</span> <button class="link" data-act="openSite" data-id="${g.siteId}" title="Alle Türen an diesem Objekt">${esc(sname(st))}</button> <button class="mini-link" data-act="editSite" data-id="${g.siteId}">✎</button></span>
+        <span><span class="muted">Objekt</span> <a class="link" href="#/o/${g.siteId}" title="Objekt öffnen">${esc(sname(st))}</a></span>
         <span class="door-et"><span class="muted">Etage</span> ${etageSelect(st, g.etageId, g.id)}</span>
-        <span><span class="muted">Kunde</span> <b>${esc(c?.name || 'kein Kunde')}</b> <button class="mini-link" data-act="moveDoorsAsk" data-id="${g.id}">ändern</button>${c ? ` <button class="mini-link" data-act="editKunde" data-id="${c.id}">✎</button>` : ''}</span>
+        <span><span class="muted">Kunde</span> ${c ? `<a class="link" href="#/k/${c.id}" title="Kunde öffnen">${esc(c.name || 'ohne Namen')}</a>` : '<b>kein Kunde</b>'} <button class="mini-link" data-act="moveDoorsAsk" data-id="${g.id}">ändern</button></span>
       </section>
       ${DESK ? '' : `<button class="big-btn primary" data-act="paperNew" data-id="${g.id}">📄 Altes Protokoll (Papier) nachtragen</button>`}
       ${(() => {
@@ -2373,6 +2530,7 @@ async function flUpdate(siteId, fn) {
   await flChain; await ckChain;
   const st = await db.get('sites', siteId); if (!st) return;
   fn(st); await db.put('sites', st);
+  if (doorScope === siteId && !document.getElementById('sheet').classList.contains('show')) { const y = scrollY; await renderObjekt(siteId); return window.scrollTo(0, y); }
   const box = document.querySelector('.fl-edit'); if (box) box.outerHTML = floorsEditor(st);
 }
 
@@ -2489,7 +2647,7 @@ document.addEventListener('click', async (e) => {
     case 'set': return setAnswer(b.dataset.id, b.dataset.v);
     case 'linkGate': return linkGate(b.dataset.id);
     case 'toDupWarn': { const w = document.getElementById('dupWarn'); window.scrollTo({ top: w.getBoundingClientRect().top + scrollY - 70, behavior: 'smooth' }); return; }
-    case 'clearSearch': { if (b.dataset.for === 'homeSearch') { homeQuery = ''; await renderHome(); } else { visitQuery = ''; await renderVisit(); } return document.getElementById(b.dataset.for)?.focus(); }
+    case 'clearSearch': { const f = b.dataset.for; if (f === 'homeSearch') { homeQuery = ''; await renderHome(); } else if (f === 'regSearch') { regQuery = ''; await rerenderDL(); } else if (f === 'kSearch') { kQuery = ''; await renderKunden(); } else if (f === 'oSearch') { oQuery = ''; await renderObjekte(); } else { visitQuery = ''; await renderVisit(); } return document.getElementById(b.dataset.for)?.focus(); }
     case 'sortBy': return setSort(b.dataset.k);
     case 'sortDir': { const s = getSort(); settings.set('visitSort', { k: s.k, d: -s.d }); return renderVisit(); }
     case 'clearSec': if (b.dataset.step) step = +b.dataset.step; return clearSection(step);
@@ -2623,13 +2781,22 @@ document.addEventListener('click', async (e) => {
       if (!p) return askPairFor(b.dataset.kind || 'tor');
       const r = await addGateToVisit(null, b.dataset.kind || 'tor', p); return (location.hash = `#/p/${r.id}/0`);
     }
-    case 'openSite': closeJump(); settings.set('doorFilter', { ...DF0, site: b.dataset.id }); if (location.hash === '#/o') return renderDoors(); return (location.hash = '#/o');
+    case 'openSite': closeJump(); return (location.hash = `#/o/${b.dataset.id}`);
+    case 'kundeDoors': settings.set('doorFilter', { ...DF0, kunde: b.dataset.id, group: 'objekt' }); return (location.hash = '#/tueren');
+    case 'newKunde': { const c = { id: uid(), name: '' }; await db.put('customers', c); return (location.hash = `#/k/${c.id}`); }
+    case 'newSiteFor': { const st = { id: uid(), customerId: b.dataset.id || null, ...(b.dataset.id ? { kundenIds: [b.dataset.id] } : {}) }; await db.put('sites', st); return (location.hash = `#/o/${st.id}`); }
+    case 'siteKundeAdd': await ckChain; curSite = await db.get('sites', b.dataset.id); return openKundePicker('site');
+    case 'siteKundeDel': {
+      await ckChain; const st = await db.get('sites', doorScope); if (!st) return;
+      st.kundenIds = (st.kundenIds || []).filter(k => k !== b.dataset.id);
+      if (st.customerId === b.dataset.id) st.customerId = st.kundenIds[0] || null;
+      await db.put('sites', st); return renderObjekt(st.id);
+    }
     case 'openDoor': closeJump(); return (location.hash = `#/d/${b.dataset.id}`);
     case 'newDoorAsk': return newDoorAsk(b.dataset.kind);
     case 'newDoorGo': return newDoorGo(b.dataset.kind);
     case 'editSite': return editSite(b.dataset.id);
-    case 'fltReset': settings.set('doorFilter', DF0); selDoors = new Set(); return renderDoors();
-    case 'fltSite': settings.set('doorFilter', { ...DF0, site: b.dataset.id }); return (location.hash = '#/o');
+    case 'fltReset': setDF({ ...DF0, group: getDF().group }); selDoors = new Set(); return rerenderDL();
     case 'paperNew': await flushReg(); return newPaperProto(b.dataset.id, location.hash);
     case 'paperFor': if (visit && !insp) await saveVisit(); if (insp) await saveNow(); return paperForItem(b.dataset.id);
     case 'moveDoorsAsk': await flushReg(); return openKundePicker('doors', b.dataset.id ? [b.dataset.id] : [...selDoors]);
@@ -2656,11 +2823,14 @@ document.addEventListener('input', (e) => {
   const t = e.target;
   if (t.id === 'homeSearch') { homeQuery = t.value; return rerenderKeepFocus(t.id, renderHome); }
   if (t.id === 'visitSearch') { visitQuery = t.value; return rerenderKeepFocus(t.id, renderVisit); }
-  if (t.id === 'regSearch') { regQuery = t.value; return rerenderKeepFocus(t.id, renderDoors); }
+  if (t.id === 'regSearch') { regQuery = t.value; return rerenderKeepFocus(t.id, rerenderDL); }
+  if (t.id === 'kSearch') { kQuery = t.value; return rerenderKeepFocus(t.id, renderKunden); }
+  if (t.id === 'oSearch') { oQuery = t.value; return rerenderKeepFocus(t.id, renderObjekte); }
   if (t.id === 'kpSearch') return drawKp(t.value);
   if (t.dataset.inote) return saveINote(t.dataset.inote, t.value);
   if (t.dataset.flname) { const [sid, fid] = t.dataset.flname.split(':'), val = t.value; flChain = flChain.then(async () => { const st = await db.get('sites', sid); const f = st?.etagen?.find(x => x.id === fid); if (f && val.trim()) { f.name = val.trim(); await db.put('sites', st); } }); return; }
   if (t.dataset.sel) { t.checked ? selDoors.add(t.dataset.sel) : selDoors.delete(t.dataset.sel); return updSelBar(); }
+  if ((t.dataset.os === 'name' || t.dataset.os === 'strasse' || t.dataset.ck === 'name') && document.getElementById('scrT')) { const f = t.closest('.grid'); const v = t.dataset.ck ? t.value : (f.querySelector('[data-os="name"]')?.value || f.querySelector('[data-os="strasse"]')?.value); document.getElementById('scrT').textContent = v || (t.dataset.ck ? 'Neuer Kunde' : 'Neues Objekt'); }
   if (t.dataset.os) { const id = t.dataset.sid, k = t.dataset.os, val = t.value; ckChain = ckChain.then(async () => { const x = await db.get('sites', id); if (x) { x[k] = val; await db.put('sites', x); } }); return; }
   if (t.id === 'ndSite') document.getElementById('ndSiteNew').classList.toggle('hidden', !!t.value);
   if (t.id === 'ndKunde') document.getElementById('ndKundeNew').classList.toggle('hidden', !!t.value);
@@ -2694,7 +2864,7 @@ document.addEventListener('change', (e) => {
     if (v === '__new') { e.target.value = (insp ? ctxEtage : curDoor?.etageId) || ''; const sid = insp ? insp.siteId : curDoor?.siteId; return askNewEtage(sid, gid); }
     return setDoorEtage(gid, v).then(() => { buzz(); if (!insp) { const y = scrollY; renderDoor(gid).then(() => window.scrollTo(0, y)); } });
   }
-  if (e.target.dataset?.flt !== undefined) { const F = getDF(); F[e.target.dataset.flt] = e.target.value; if (e.target.dataset.flt === 'site') { F.kunde = ''; F.etage = ''; } settings.set('doorFilter', F); selDoors = new Set(); return renderDoors(); }
+  if (e.target.dataset?.flt !== undefined) { const F = getDF(); F[e.target.dataset.flt] = e.target.value; if (e.target.dataset.flt === 'site') { F.kunde = ''; F.etage = ''; } setDF(F); selDoors = new Set(); return rerenderDL(); }
   if (e.target.id === 'ndSite' || e.target.id === 'ndKunde') e.target.dispatchEvent(new Event('input', { bubbles: true }));
   if (e.target.dataset?.sortSel !== undefined) { settings.set('visitSort', { k: e.target.value, d: 1 }); return renderVisit(); }
   const f = e.target.dataset?.photoFor;
@@ -2747,7 +2917,7 @@ document.addEventListener('keydown', (e) => {
   if (typing || sheetOpen) return;
   const k = e.key.length === 1 ? e.key.toLowerCase() : e.key;
   if (k === '?') { e.preventDefault(); return openKeys(); }
-  if (k === '/') { const sb = document.getElementById('visitSearch') || document.getElementById('homeSearch') || document.getElementById('regSearch'); if (sb) { e.preventDefault(); sb.focus(); sb.select(); return; } }
+  if (k === '/') { const sb = document.getElementById('visitSearch') || document.getElementById('homeSearch') || document.getElementById('regSearch') || document.getElementById('kSearch') || document.getElementById('oSearch'); if (sb) { e.preventDefault(); sb.focus(); sb.select(); return; } }
   if (k === 'h' && !isGuide(location.hash)) { e.preventDefault(); return (location.hash = '#/handbuch'); }
   if (!insp || !tpl) return;
   const all = DESK && document.querySelector('main.dk-all');
@@ -2835,8 +3005,10 @@ async function renderNav() {
   const home = !h || h === '#/' || h === '#';
   nav.innerHTML = `
     <div class="dn-brand"><img src="icon.svg" alt=""> Prüfprotokolle</div>
-    <a class="dn-item ${home ? 'on' : ''}" href="#/">▤ Übersicht</a>
-    <a class="dn-item ${/^#\/[od](\/|$)/.test(h) ? 'on' : ''}" href="#/o">🚪 Türen und Tore</a>
+    <a class="dn-item ${home ? 'on' : ''}" href="#/">▤ Termine</a>
+    <a class="dn-item ${/^#\/k(\/|$)/.test(h) ? 'on' : ''}" href="#/k">👤 Kunden</a>
+    <a class="dn-item ${/^#\/o(\/|$)/.test(h) ? 'on' : ''}" href="#/o">🏢 Objekte</a>
+    <a class="dn-item ${/^#\/(tueren|d\/)/.test(h) ? 'on' : ''}" href="#/tueren">🚪 Türen und Tore</a>
     <div class="dn-h"><span>Offene Termine</span><button class="dn-add" data-act="newVisit" title="Neuer Termin">＋</button></div>
     ${open.map(vrow).join('') || '<p class="dn-empty">Keine offenen Termine</p>'}
     ${done.length ? `<div class="dn-h"><span>Erledigt</span></div>${done.map(vrow).join('')}` : ''}
