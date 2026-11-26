@@ -533,7 +533,7 @@ async function newInspection(prefill = {}, { open = true, step: startStep = 0 } 
   };
   // Neue Tür / neues Tor: sofort als eigener Datensatz im Register anlegen (nicht erst beim Abschließen)
   if (!rec.gateId && rec.siteId && !rec.paper) {
-    const g = { id: uid(), siteId: rec.siteId, customerId: rec.customerId, templateId: rec.templateId, data: doorData(rec), createdFrom: rec.id, secOn: { ...rec.secOn } };
+    const g = { id: uid(), siteId: rec.siteId, customerId: rec.customerId, templateId: rec.templateId, data: doorData(rec), createdFrom: rec.id, secOn: { ...rec.secOn }, ...(prefill.etageId ? { etageId: prefill.etageId } : {}) };
     rec.gateId = g.id; rec.freshGate = true;
     await saveGate(g);
   }
@@ -1238,8 +1238,9 @@ async function duplicateItem(id) {
     if (a.x !== undefined && a.x !== '') c.x = structuredClone(a.x);
     if (Object.keys(c).length) answers[k] = c;
   }
+  const srcGate = src.gateId && await db.get('gates', src.gateId);
   const rec = await newInspection({
-    templateId: src.templateId, header, customerId: src.customerId, siteId: src.siteId, gateId: null,
+    templateId: src.templateId, header, customerId: src.customerId, siteId: src.siteId, gateId: null, etageId: srcGate?.etageId || null,
     visitId: src.visitId, pairId: src.pairId, order: (src.order ?? 0) + 0.5, agName: src.sig?.ag?.name || '', secOn: src.secOn || null,
   }, { open: false });
   Object.assign(rec, { answers, angebot: !!src.angebot, ort: src.ort || '', copiedFrom: src.id, maxStep: t.sections.length, checked: Object.fromEntries(Object.entries(src.checked || {}).filter(([k]) => k !== 'head')) });
