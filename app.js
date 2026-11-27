@@ -1495,7 +1495,8 @@ async function openMenu(forWhat, id) {
   } else if (forWhat === 'gate') {
     const g = await db.get('gates', id); if (!g) return;
     title = g.standort || g.label || 'Tür / Tor';
-    rows = [...(/^#\/d\//.test(location.hash) ? [] : [go(`#/d/${g.id}`, '🚪 Öffnen')]), btn('paperNew', g.id, '📄 Altes Papierprotokoll nachtragen'), btn('moveDoorsAsk', g.id, '⇄ Kunde ändern'), del('gate', g.id, `${gateUnit(g).noun} löschen`)];
+    const gst = await db.get('sites', g.siteId);
+    rows = [...(/^#\/d\//.test(location.hash) ? [] : [go(`#/d/${g.id}`, '🚪 Öffnen')]), ...(floorsOf(gst).some(f => f.map) ? [btn('planFor', g.id, `📍 ${g.pos ? 'Auf dem Plan zeigen' : 'Auf dem Plan setzen'}`)] : []), btn('paperNew', g.id, '📄 Altes Papierprotokoll nachtragen'), btn('moveDoorsAsk', g.id, '⇄ Kunde ändern'), del('gate', g.id, `${gateUnit(g).noun} löschen`)];
   } else if (forWhat === 'item' || forWhat === 'insp') {
     const i = await db.get('inspections', id) || (insp?.id === id ? insp : null); if (!i) return;
     const u = unitOf(i);
@@ -1623,14 +1624,14 @@ function sortBarHTML() {
     <div class="sort-bar"><label class="muted small">Gruppieren</label>${vGroupSel()}</div>`;
 }
 
-function itemRow(i, dup = false, todoN = 0) {
+function itemRow(i, dup = false, todoN = 0, pin = false) {
   const [cls, label] = itemState(i);
   const t = unitOf(i);
   return `<div class="gate-line"><button class="gate-row st-${cls}" data-act="openItem" data-id="${i.id}">
     <span class="gate-ico">${{ fertig: '✓', maengel: '✗', arbeit: '…', offen: '' }[cls]}</span>
     <span class="gate-txt"><b>${esc(t.standort || `${t.noun} ohne Standort`)}</b><br><span class="muted small"><span class="kind">${esc(t.noun)}</span> ${esc(unitSub(t))}</span></span>
     ${dup ? dupPill : ''}${i.status !== 'done' ? todoPill(todoN) : ''}<span class="pill ${cls === 'maengel' ? 'red' : cls === 'fertig' ? 'green' : ''}">${label}</span></button>
-    <button class="dup-btn" data-act="menu" data-for="item" data-id="${i.id}" aria-label="Mehr zu ${esc(t.noun)}">⋯</button></div>`;
+    ${pin ? pinBtnRow(i.gateId) : ''}<button class="dup-btn" data-act="menu" data-for="item" data-id="${i.id}" aria-label="Mehr zu ${esc(t.noun)}">⋯</button></div>`;
 }
 async function renderVisit() {
   if (DESK) return renderVisitDesk();
@@ -1644,8 +1645,8 @@ async function renderVisit() {
   const q = visitQuery.trim();
   const shown = (list) => q ? list.filter(i => matchScore(i, q) > 0) : list;
   const tN = await todoCounts();
-  const rowM = (i) => itemRow(i, dups.has(i.id), tN.get(i.gateId) || 0);
   const C = await groupCtx();
+  const rowM = (i) => itemRow(i, dups.has(i.id), tN.get(i.gateId) || 0, onPlan(C.gById.get(i.gateId), C.sById.get(i.siteId)));
   const list = q ? (() => { const hits = sortItems(shown(items), v).sort((a, b) => matchScore(b[0], q) - matchScore(a[0], q)); return hits.map(([i]) => rowM(i)).join('') || '<p class="empty">Keine Tür und kein Tor passt zur Suche.</p>'; })()
     : !items.length ? '<p class="empty">Noch keine Tore oder Türen in diesem Termin.</p>'
     : groupVisit(sortItems(items, v), getVGroup(), C).map(g => (g.h ? `<h3 class="pair-h vg-h lvl${g.lvl}">${esc(g.h)} <span class="muted small">${g.n}</span></h3>` : '') + g.rows.map(([i]) => rowM(i)).join('')).join('');
@@ -2057,6 +2058,9 @@ function regDupSet(gates) {
   return new Set(gates.filter(g => c.get(key(g)) > 1).map(g => g.id));
 }
 const regDupPill = '<span class="pill red dup-pill" title="Diese Nummer gibt es an diesem Objekt mehrmals">doppelt</span>';
+// Liegt die Tür auf einem Etagenplan? Dann gibt es überall 📍 „Auf dem Plan zeigen“
+const onPlan = (g, st) => !!(g?.pos && floorsOf(st).some(f => f.id === g.pos.etageId && f.map));
+const pinBtnRow = (gid) => DESK ? `<button class="ib" data-act="planFor" data-id="${gid}" title="Auf dem Plan zeigen">📍</button>` : `<button class="dup-btn pin-row" data-act="planFor" data-id="${gid}" aria-label="Auf dem Plan zeigen">📍</button>`;
 // Eine Tür in einer Liste (Handy: Zeile, PC: Tabellenzeile)
 function doorRow(g, R, { site = false, kunde = false, sel = false, dup = false } = {}) {
   const u = gateUnit(g), s = R.sById.get(g.siteId), c = R.cById.get(g.customerId);
@@ -2064,13 +2068,13 @@ function doorRow(g, R, { site = false, kunde = false, sel = false, dup = false }
   if (DESK) return `<tr class="dt-click" data-act="openDoor" data-id="${g.id}">${sel ? `<td class="cb">${cb}</td>` : ''}
     <td class="nw"><b>${esc(u.nr || '')}</b></td><td><span class="kind-tag ${gateKind(g)}">${esc(u.noun)}</span></td><td class="nw">${esc(floorName(s, g.etageId))}</td>
     <td><b>${esc(u.standort || '–')}</b>${dup ? ' ' + regDupPill : ''}</td><td>${esc(u.typ || '')}</td>
-    ${site ? `<td>${esc(sname(s))}</td>` : ''}${kunde ? `<td>${esc(c?.name || '')}</td>` : ''}<td class="nw">${lastPill(g)}</td></tr>`;
+    ${site ? `<td>${esc(sname(s))}</td>` : ''}${kunde ? `<td>${esc(c?.name || '')}</td>` : ''}<td class="nw">${lastPill(g)}</td><td class="acts">${onPlan(g, s) ? pinBtnRow(g.id) : ''}</td></tr>`;
   return `<div class="gate-line">${sel ? `<label class="sel-cb">${cb}</label>` : ''}<button class="gate-row door-row" data-act="openDoor" data-id="${g.id}">
     <span class="gate-txt"><b>${u.nr ? `<span class="nr-tag">${esc(u.nr)}</span> ` : ''}${esc(u.standort || `${u.noun} ohne Standort`)}</b>${dup ? ' ' + regDupPill : ''}<br>
     <span class="muted small"><span class="kind">${esc(u.noun)}</span> ${esc([floorName(s, g.etageId), u.typ, site && sname(s), kunde && c?.name].filter(Boolean).join(' · '))}</span></span>
-    ${lastPill(g)}</button></div>`;
+    ${lastPill(g)}</button>${onPlan(g, s) ? pinBtnRow(g.id) : ''}</div>`;
 }
-const doorHead = ({ site = false, kunde = false, sel = false } = {}) => `<thead><tr>${sel ? '<th class="cb"></th>' : ''}<th>Nr.</th><th>Art</th><th>Etage</th><th>Standort / Lage</th><th>Typ</th>${site ? '<th>Objekt</th>' : ''}${kunde ? '<th>Kunde</th>' : ''}<th>Zuletzt geprüft</th></tr></thead>`;
+const doorHead = ({ site = false, kunde = false, sel = false } = {}) => `<thead><tr>${sel ? '<th class="cb"></th>' : ''}<th>Nr.</th><th>Art</th><th>Etage</th><th>Standort / Lage</th><th>Typ</th>${site ? '<th>Objekt</th>' : ''}${kunde ? '<th>Kunde</th>' : ''}<th>Zuletzt geprüft</th><th></th></tr></thead>`;
 const doorTable = (rows, opts) => DESK ? `<table class="dt">${doorHead(opts)}<tbody>${rows}</tbody></table>` : rows;
 const regBar = (back, title, sub, right = '') => DESK
   ? `<header class="bar dk-tb">${back ? `<button class="tb-btn icon" data-act="menuGo" data-href="${back}" title="Zurück">‹</button>` : ''}<div class="bar-title"><span class="t">${title}</span>${sub ? `<span class="sub">${sub}</span>` : ''}</div>${right}</header>`
@@ -3859,7 +3863,7 @@ async function renderVisitDesk() {
       ${showAll ? `<td class="muted">${esc(pairLabel(pairOfItem(v, i)))}</td>` : ''}
       <td><span class="pill ${cls === 'maengel' ? 'red' : cls === 'fertig' ? 'green' : ''}">${esc(label)}</span></td>
       <td class="num">${m ? `<b class="red">${m}</b>` : ''}</td>
-      <td class="acts"><button class="ib" data-act="menuGo" data-href="#/druck/${i.id}" title="Drucken / PDF">🖨</button><button class="ib" data-act="duplicate" data-id="${i.id}" title="Kopie anlegen (gleiche Häkchen)">⧉</button><button class="ib" data-act="menu" data-for="item" data-id="${i.id}" title="Mehr">⋯</button></td></tr>`;
+      <td class="acts">${onPlan(C.gById.get(i.gateId), C.sById.get(i.siteId)) ? pinBtnRow(i.gateId) : ''}<button class="ib" data-act="menuGo" data-href="#/druck/${i.id}" title="Drucken / PDF">🖨</button><button class="ib" data-act="duplicate" data-id="${i.id}" title="Kopie anlegen (gleiche Häkchen)">⧉</button><button class="ib" data-act="menu" data-for="item" data-id="${i.id}" title="Mehr">⋯</button></td></tr>`;
   };
   $app.innerHTML = `
     <header class="bar dk-tb">

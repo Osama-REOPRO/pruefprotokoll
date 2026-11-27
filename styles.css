@@ -663,3 +663,4 @@ html:not(.desk) .vw-page { padding-bottom: calc(96px + env(safe-area-inset-botto
 .pv-ghost.k-tor { border-radius: 3px; }
 .vw-paper .print-stage { padding: 4px 0 0; }
 .vw-paper .ppage { box-shadow: 0 2px 14px rgba(0,0,0,.22); }
+.dup-btn.pin-row { flex: 0 0 46px; font-size: 1.15em; margin-right: 6px; }
