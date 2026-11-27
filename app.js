@@ -244,6 +244,24 @@ function spySet(cur) {
 // ---------- Routing ----------
 let lastHash = '', prevHash = '', listBack = '';
 const backOf = { o: '#/o', k: '#/k' };
+// Spur der besuchten Seiten: ‹ Zurück geht immer den Weg zurück, den man gekommen ist (wie ein Stapel).
+// Geht man zur vorigen Seite, wird die aktuelle abgelegt; so kommt man immer wieder zum Anfang.
+// Ein Protokoll (alle Schritte, Ansicht/Bearbeiten) und ein Plan (alle Etagen) zählen je als eine Seite.
+let trail = (() => { try { return JSON.parse(sessionStorage.getItem('trail')) || []; } catch { return []; } })(), trailBackStep = false;
+const trailKey = (h) => { const p = (h || '').replace(/^#\/?/, '').split('/'); return p[0] === 'p' || p[0] === 'plan' ? `${p[0]}/${p[1]}` : p.join('/'); };
+function trailVisit(h) {
+  const k = trailKey(h), p = (h || '').replace(/^#\/?/, '').split('/');
+  const top = !p[0] || (['k', 'o', 'tueren'].includes(p[0]) && !p[1]); // Hauptlisten: neuer Anfang
+  const n = trail.length;
+  trailBackStep = n > 1 && trail[n - 2].k === k; // zurück zur vorigen Seite
+  if (top) trail = [{ k, h }];
+  else if (trailBackStep) { trail.pop(); trail[n - 2].h = h; }
+  else if (n && trail[n - 1].k === k) trail[n - 1].h = h; // gleiche Seite (anderer Schritt / andere Etage)
+  else trail.push({ k, h });
+  if (trail.length > 40) trail = trail.slice(-40);
+  try { sessionStorage.setItem('trail', JSON.stringify(trail)); } catch {}
+}
+const trailPrev = () => trail.length > 1 ? trail[trail.length - 2].h : '';
 const screenOf = (h) => (h || '').replace(/^#\/?/, '').split('/').slice(0, 2).join('/');
 // Handbuch: merken, woher man kam, damit ✕ genau dorthin (und an dieselbe Stelle) zurückführt
 let guideReturn = null, pendingY = null;
@@ -258,6 +276,7 @@ async function routeInner() {
   await flushReg();
   prevHash = lastHash;
   if (location.hash !== lastHash) { lastHash = location.hash; window.scrollTo(0, 0); }
+  if (trailKey(location.hash) !== trail[trail.length - 1]?.k || location.hash !== trail[trail.length - 1]?.h) trailVisit(location.hash);
   closeJump();
   closeZoom();
   document.getElementById('snack').classList.remove('show');
@@ -268,16 +287,15 @@ async function routeInner() {
   if (parts[0] === 'plan' && parts[1]) {
     if (insp) await saveNow();
     insp = null; tpl = null; visit = null; curDoor = null; doorScope = null;
-    const ret = planMem && planMem.hash === location.hash && /^#\/(p|d|druck)\//.test(prevHash);
-    if (ret) planBack = planMem.back; else if (!/^#\/plan\//.test(prevHash)) planBack = prevHash || `#/o/${parts[1]}`;
-    planRestore = ret ? planMem : null; listBack = location.hash;
+    const ret = planMem && planMem.hash === location.hash && trailBackStep;
+    planBack = trailPrev() || `#/o/${parts[1]}`;
+    planRestore = ret ? planMem : null;
     planCtx = parts[3] === 't' ? { vid: parts[4] } : parts[3] === 'g' ? { gid: parts[4] } : {};
     return renderPlan(parts[1], parts[2]);
   }
   if (!['p', 'd', 'druck', 'druck-t', 'handbuch'].includes(parts[0])) {
     // Woher man kam: Türseite, Objekt und Kunde führen mit ‹ genau dorthin zurück
-    if ((parts[0] === 'o' || parts[0] === 'k') && parts[1] && !/^#\/(d|p|plan)\//.test(prevHash) && screenOf(prevHash) !== screenOf(location.hash)) backOf[parts[0]] = prevHash || `#/${parts[0]}`;
-    listBack = location.hash || '#/';
+    if ((parts[0] === 'o' || parts[0] === 'k') && parts[1]) backOf[parts[0]] = trailPrev() || `#/${parts[0]}`;
   }
   if ((parts[0] === 'druck' || parts[0] === 'druck-t') && parts[1]) {
     if (insp) await saveNow();
@@ -313,7 +331,7 @@ async function routeInner() {
     insp = null; tpl = null; visit = null;
     releaseAwake();
     settings.set('last', null);
-    if (parts[0] === 'd' && parts[1]) { loadLearn(); return renderDoor(parts[1]); }
+    if (parts[0] === 'd' && parts[1]) { listBack = trailPrev(); loadLearn(); return renderDoor(parts[1]); }
     curDoor = null; doorScope = null;
     if (screenOf(location.hash) !== screenOf(prevHash)) { regQuery = ''; selDoors = new Set(); }
     if (parts[0] === 'k') return parts[1] ? renderKunde(parts[1]) : renderKunden();
@@ -321,7 +339,7 @@ async function routeInner() {
     return renderDoors();
   }
   if (parts[0] === 'p' && parts[1]) {
-    if (!/^#\/p\//.test(prevHash)) protoFrom = prevHash;
+    protoFrom = trailPrev();
     if (!insp || insp.id !== parts[1]) {
       insp = await db.get('inspections', parts[1]);
       if (!insp) { location.hash = '#/'; return; }
@@ -3327,7 +3345,7 @@ document.addEventListener('click', async (e) => {
     case 'size': { settings.set('size', settings.get('size', 'normal') === 'normal' ? 'gross' : 'normal'); return applyLook(); }
     case 'viewEdit': return (location.hash = `#/p/${insp.id}/0`);
     case 'viewShow': await saveNow(); return (location.hash = `#/p/${insp.id}/v`);
-    case 'home': await saveNow(); if (/^#\/plan\//.test(protoFrom)) return (location.hash = protoFrom); return (location.hash = insp?.paper ? (insp.returnTo || `#/d/${insp.gateId}`) : insp?.visitId ? `#/t/${insp.visitId}` : '#/');
+    case 'home': await saveNow(); if (protoFrom) return (location.hash = protoFrom); return (location.hash = insp?.paper ? (insp.returnTo || `#/d/${insp.gateId}`) : insp?.visitId ? `#/t/${insp.visitId}` : '#/');
     case 'jump': return openJump();
     case 'goto': closeJump(); return go(+b.dataset.step);
     case 'prev': return go(stepBy(-1));
@@ -3754,7 +3772,7 @@ async function renderNav() {
     const u = unitOf(insp);
     if (viewMode) { nav.innerHTML = `<button class="dn-back" data-act="menuGo" data-href="${esc(viewBack)}">‹ Zurück</button><div class="dn-title"><span class="dn-h">${unitHead(u)}</span><span>${esc(u.noun)} · ${esc(inspTitle(insp))}</span></div><button class="tb-btn primary dn-edit" data-act="viewEdit">✎ Bearbeiten <kbd>E</kbd></button><div class="dn-foot"><a class="tb-btn sm" href="#/handbuch">📖 Handbuch</a><button class="tb-btn sm" data-act="lang">${LANG === 'en' ? 'DE' : 'EN'}</button></div>`; return; }
     nav.innerHTML = `
-      <button class="dn-back" data-act="home">‹ ${/^#\/plan\//.test(protoFrom) ? 'Zum Plan' : insp.paper ? 'Zurück' : insp.visitId ? 'Zum Termin' : 'Übersicht'}</button>
+      <button class="dn-back" data-act="home">‹ ${/^#\/plan\//.test(protoFrom) ? 'Zum Plan' : /^#\/t\//.test(protoFrom) || (!protoFrom && insp.visitId) ? 'Zum Termin' : protoFrom || insp.paper ? 'Zurück' : 'Übersicht'}</button>
       <div class="dn-title"><span class="dn-h">${unitHead(u)}</span><span>${esc(u.noun)} · ${esc(inspTitle(insp))}</span></div>
       ${sideSteps()}
       <div class="dn-foot"><a class="tb-btn sm" href="#/handbuch" title="Feldhandbuch">📖 Handbuch</a><button class="tb-btn sm" data-act="lang" title="Sprache">${LANG === 'en' ? 'DE' : 'EN'}</button></div>`;
