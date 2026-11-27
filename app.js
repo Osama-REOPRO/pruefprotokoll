@@ -2821,21 +2821,19 @@ function drawPins() {
 }
 // Liste: Türen und Tore dieser Etage (und ohne Etage), die noch nicht auf dem Plan sind.
 // Antippen/Anklicken: dann auf dem Plan tippen/klicken, wo sie ist. Am PC auch direkt auf den Plan ziehen.
-const planUnplaced = () => PS.gates.filter(g => !g.pos && (!g.etageId || g.etageId === PS.fid)).sort((a, b) => (!!a.etageId === !!b.etageId ? byNr(a, b) : a.etageId ? -1 : 1));
 function drawList() {
   const el = document.getElementById('pvList'); if (!el || !PS) return;
-  const gs = planUnplaced(), fine = FINE.matches, open = settings.get('planList', fine);
+  const fine = FINE.matches, open = settings.get('planList', fine), other = settings.get('planListOther', false);
+  const main = PS.gates.filter(planMain).sort(byNr), rest = PS.gates.filter(g => !g.pos && !planMain(g)).sort((a, b) => (a.etageId ? 1 : 0) - (b.etageId ? 1 : 0) || byNr(a, b));
   el.classList.toggle('open', !!open); el.classList.toggle('fine', fine);
-  if (!gs.length) { el.innerHTML = ''; el.classList.add('hidden'); return; }
+  if (!main.length && !rest.length) { el.innerHTML = ''; el.classList.add('hidden'); return; }
   el.classList.remove('hidden');
-  const head = `<button type="button" class="pv-list-h" data-act="pvListT">📋 Noch nicht auf dem Plan <b>${gs.length}</b> <span class="caret">${open ? '▴' : '▾'}</span></button>`;
-  if (!open) { el.innerHTML = head; return; }
-  let lastNo = false;
-  el.innerHTML = head + `<div class="pv-list-b">${gs.map(g => {
-    const u = gateUnit(g), sep = !g.etageId && !lastNo ? '<div class="pv-list-sep">ohne Etage</div>' : '';
-    if (!g.etageId) lastNo = true;
-    return `${sep}<button type="button" class="pv-list-row ${PS.armed === g.id ? 'on' : ''}" data-act="pvArm" data-id="${g.id}" title="${fine ? 'Anklicken und dann auf den Plan klicken, oder direkt auf den Plan ziehen' : 'Antippen, dann auf dem Plan tippen'}"><span class="kind-tag ${gateKind(g)}">${esc(u.noun)}</span> <b>${esc(u.nr || '–')}</b> <span class="muted small">${esc(u.standort || '')}</span></button>`;
-  }).join('')}</div>`;
+  // Eingeklappt: nur ein kleiner Knopf, der Plan bleibt frei
+  if (!open) { el.innerHTML = `<button type="button" class="pv-list-h mini" data-act="pvListT" title="Türen, die noch nicht auf dem Plan sind, anzeigen">📋 <b>${main.length}</b></button>`; return; }
+  const row = (g) => { const u = gateUnit(g); return `<button type="button" class="pv-list-row ${PS.armed === g.id ? 'on' : ''}" data-act="pvArm" data-id="${g.id}" title="${fine ? 'Anklicken und dann auf den Plan klicken, oder direkt auf den Plan ziehen' : 'Antippen, dann auf dem Plan tippen'}"><span class="kind-tag ${gateKind(g)}">${esc(u.noun)}</span> <b>${esc(u.nr || '–')}</b> <span class="muted small">${esc(u.standort || '')}${g.etageId && g.etageId !== PS.fid ? ' · ' + esc(floorName(PS.site, g.etageId)) : ''}</span></button>`; };
+  el.innerHTML = `<div class="pv-list-top"><span>📋 Noch nicht auf dem Plan <b>${main.length}</b></span><button type="button" class="pv-list-x" data-act="pvListT" title="Ausblenden" aria-label="Liste ausblenden">✕</button></div>
+    <div class="pv-list-b">${main.map(row).join('') || `<p class="pv-list-none">Alle Türen dieser Etage sind gesetzt.</p>`}
+    ${rest.length ? `<button type="button" class="pv-list-sep" data-act="pvListO">${other ? '▾' : '▸'} Andere Türen (${rest.length})</button>${other ? rest.map(row).join('') : ''}` : ''}</div>`;
 }
 let listD = null, listWired = false;
 function listDrag() {
@@ -3007,31 +3005,40 @@ function openFind(sx, sy) {
   setTimeout(() => document.getElementById('pvFindIn')?.focus(), 30);
 }
 function closeFind() { PS.find = false; PS.temp = null; PS.fIdx = 0; document.getElementById('pvFind')?.remove(); drawPins(); }
-function findHits(q, all = PS.fAll) {
+// Vorschläge: zuerst nur Türen dieser Etage, die noch nicht auf dem Plan sind.
+// Alles andere (ohne Etage, andere Etagen, schon gesetzt) liegt eingeklappt unter „Andere Türen“.
+const planMain = (g) => !g.pos && g.etageId === PS.fid;
+function findHits(q) {
   const nq = normNr(q), t = normTxt(q);
-  const st = PS.site, sc = (g) => {
+  const sc = (g) => {
+    if (!q) return 1;
     const u = gateUnit(g), n = normNr(u.nr);
-    if (!q) return g.pos ? 0 : (g.etageId === PS.fid ? 3 : !g.etageId ? 2 : 1);
     if (n && nq) { if (n === nq) return 10; if (n.startsWith(nq)) return 6; if (n.includes(nq)) return 4; }
     return normTxt(u.standort).includes(t) ? 2 : 0;
   };
-  // Nur Türen dieser Etage, außer „auch andere Etagen“ ist an
-  const here = (g) => { const e = g.pos?.etageId || g.etageId; return !e || e === PS.fid; }; // ohne Etage passt überall
-  return PS.gates.filter(g => all || here(g)).map(g => [g, sc(g)]).filter(([, s]) => s > 0).sort((a, b) => b[1] - a[1] || byNr(a[0], b[0])).slice(0, 40).map(([g]) => g);
+  const rank = (gs) => gs.map(g => [g, sc(g)]).filter(([, s]) => s > 0).sort((a, b) => b[1] - a[1] || byNr(a[0], b[0])).slice(0, 40).map(([g]) => g);
+  const oRank = (g) => g.pos?.etageId === PS.fid ? 3 : !g.etageId ? 1 : 2; // ohne Etage zuerst, schon hier gesetzte zuletzt
+  return { main: rank(PS.gates.filter(planMain)), other: rank(PS.gates.filter(g => !planMain(g))).sort((a, b) => q ? 0 : oRank(a) - oRank(b)) };
 }
+const gateWhere = (g) => g.pos ? (g.pos.etageId === PS.fid ? 'schon hier auf dem Plan' : `auf dem Plan ${floorName(PS.site, g.pos.etageId) || ''}`) : g.etageId ? floorName(PS.site, g.etageId) : 'ohne Etage';
 function drawFind() {
   const box = document.getElementById('pvFindList'); if (!box) return;
-  const q = PS.fq.trim(), hits = findHits(q), allHits = PS.fAll ? hits : findHits(q, true), exact = allHits.some(g => normNr(gateUnit(g).nr) === normNr(q));
-  const more = allHits.length - (PS.fAll ? 0 : hits.length), fname = floorName(PS.site, PS.fid) || 'diese Etage';
-  PS.fItems = [...hits.map(g => ({ g })), ...(q && !exact ? [{ make: 'tuer' }, { make: 'tor' }] : [])];
+  const q = PS.fq.trim(), H = findHits(q), exact = [...H.main, ...H.other].some(g => normNr(gateUnit(g).nr) === normNr(q));
+  const fname = floorName(PS.site, PS.fid) || 'diese Etage';
+  // Treffer nur bei den anderen? Dann gleich aufklappen
+  const open = PS.fAll || (q && !H.main.length && H.other.length > 0);
+  PS.fItems = [...H.main.map(g => ({ g })), ...(q && !exact ? [{ make: 'tuer' }, { make: 'tor' }] : []), ...(open ? H.other.map(g => ({ g, o: 1 })) : [])];
   PS.fIdx = Math.min(PS.fIdx || 0, Math.max(0, PS.fItems.length - 1));
-  box.innerHTML = PS.fItems.map((it, i) => {
+  const row = (it, i) => {
     if (it.make) return `<button class="pv-find-row new ${i === PS.fIdx ? 'on' : ''}" data-act="pvFindPick" data-i="${i}">＋ ${it.make === 'tuer' ? 'Neue Tür' : 'Neues Tor'} „${esc(q)}“ anlegen</button>`;
-    const g = it.g, u = gateUnit(g), where = g.pos ? `liegt auf ${floorName(PS.site, g.pos.etageId) || 'Plan'}` : g.etageId ? floorName(PS.site, g.etageId) : 'ohne Etage';
-    return `<button class="pv-find-row ${i === PS.fIdx ? 'on' : ''}" data-act="pvFindPick" data-i="${i}"><span class="kind-tag ${gateKind(g)}">${esc(u.noun)}</span> <b>${esc(u.nr || '–')}</b> <span class="muted">${esc(u.standort || '')}</span>${where ? ` <span class="muted small">· ${esc(where)}</span>` : ''}</button>`;
-  }).join('') + (PS.fAll ? `<button class="pv-find-row scope" data-act="pvFindAll">↩ Nur ${esc(fname)} zeigen</button>`
-    : more ? `<button class="pv-find-row scope" data-act="pvFindAll">🔎 Auch andere Etagen durchsuchen <span class="muted small">(${more} ${q ? 'Treffer' : 'weitere'})</span></button>` : '')
-    || `<p class="muted small pv-find-empty">${q ? '' : `Auf ${esc(fname)} gibt es keine Tür und kein Tor, das noch nicht auf dem Plan ist. Nummer eintippen, um eine neue anzulegen.`}</p>`;
+    const g = it.g, u = gateUnit(g);
+    return `<button class="pv-find-row ${i === PS.fIdx ? 'on' : ''}" data-act="pvFindPick" data-i="${i}"><span class="kind-tag ${gateKind(g)}">${esc(u.noun)}</span> <b>${esc(u.nr || '–')}</b> <span class="muted">${esc(u.standort || '')}</span>${it.o ? ` <span class="muted small">· ${esc(gateWhere(g))}</span>` : ''}</button>`;
+  };
+  const rows = PS.fItems.map((it, i) => [it, i]);
+  const mainH = rows.filter(([it]) => !it.o).map(([it, i]) => row(it, i)).join('');
+  const otherH = rows.filter(([it]) => it.o).map(([it, i]) => row(it, i)).join('');
+  box.innerHTML = (mainH || `<p class="muted small pv-find-empty">${q ? `Auf ${esc(fname)} passt keine Tür.` : `Auf ${esc(fname)} ist jede Tür schon gesetzt. Nummer eintippen, um eine neue anzulegen.`}</p>`)
+    + (H.other.length ? `<button class="pv-find-row scope" data-act="pvFindAll">${open ? '▾' : '▸'} Andere Türen <span class="muted small">(${H.other.length})</span></button>${open ? otherH : ''}` : '');
   box.querySelector('.on')?.scrollIntoView({ block: 'nearest' });
 }
 async function findPick(i) {
@@ -3327,6 +3334,7 @@ document.addEventListener('click', async (e) => {
     case 'planGo': closeJump(); return location.hash.startsWith('#/plan/') ? location.replace(`#/plan/${b.dataset.site}/${b.dataset.id}${planSuffix()}`) : (location.hash = `#/plan/${b.dataset.site}/${b.dataset.id}`);
     case 'pvPlace': if (!PS) return; PS.place = !PS.place; PS.armed = null; if (!PS.place && PS.find) closeFind(); return setPlaceHint();
     case 'pvFindX': return closeFind();
+    case 'pvListO': settings.set('planListOther', !settings.get('planListOther', false)); drawList(); return layoutPins();
     case 'pvListT': settings.set('planList', !settings.get('planList', FINE.matches)); drawList(); return layoutPins();
     case 'pvArm': { if (!PS || b.dataset.noclick) return; PS.armed = PS.armed === b.dataset.id ? null : b.dataset.id; PS.place = false; if (PS.find) closeFind(); if (PS.sel) closeCard();
       if (!FINE.matches && PS.armed) settings.set('planList', false); setPlaceHint(); drawPins(); return; }

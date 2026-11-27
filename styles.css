@@ -653,7 +653,12 @@ html:not(.desk) .vw-page { padding-bottom: calc(96px + env(safe-area-inset-botto
 .pv-list-row:hover { background: rgba(255,255,255,.1); }
 .pv-list-row.on { background: #7c3aed; }
 .pv-list-row .muted { color: #cbd5e1; }
-.pv-list-sep { font-size: .72em; text-transform: uppercase; letter-spacing: .05em; color: #94a3b8; padding: 8px 8px 2px; }
+.pv-list-sep { display: block; width: 100%; text-align: left; border: 0; border-top: 1px solid rgba(255,255,255,.12); background: none; font: inherit; font-size: .8em; font-weight: 600; color: #94a3b8; padding: 8px 8px 6px; margin-top: 4px; cursor: pointer; }
+.pv-list-top { display: flex; align-items: center; gap: 6px; padding: 6px 6px 6px 12px; font-size: .85em; font-weight: 600; white-space: nowrap; }
+.pv-list-top b { background: #7c3aed; border-radius: 99px; padding: 1px 8px; }
+.pv-list-x { margin-left: auto; border: 0; background: rgba(255,255,255,.12); color: #fff; width: 30px; height: 30px; border-radius: 8px; cursor: pointer; font-size: .95em; }
+.pv-list-none { margin: 4px 8px 8px; font-size: .82em; color: #cbd5e1; }
+.pv-list-h.mini { padding: 8px 12px; }
 .pv-ghost { position: fixed; left: 0; top: 0; z-index: 60; pointer-events: none; margin: -12px 0 0 -16px; padding: 4px 8px; font: 700 12px/1 system-ui, sans-serif; color: #fff; background: #7c3aed; border: 2px solid #fff; border-radius: 999px; box-shadow: 0 4px 12px rgba(0,0,0,.5); }
 .pv-ghost.k-tor { border-radius: 3px; }
 .vw-paper .print-stage { padding: 4px 0 0; }
