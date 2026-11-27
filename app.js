@@ -268,7 +268,9 @@ async function routeInner() {
   if (parts[0] === 'plan' && parts[1]) {
     if (insp) await saveNow();
     insp = null; tpl = null; visit = null; curDoor = null; doorScope = null;
-    if (!/^#\/plan\//.test(prevHash)) planBack = prevHash || `#/o/${parts[1]}`;
+    const ret = planMem && planMem.hash === location.hash && /^#\/(p|d|druck)\//.test(prevHash);
+    if (ret) planBack = planMem.back; else if (!/^#\/plan\//.test(prevHash)) planBack = prevHash || `#/o/${parts[1]}`;
+    planRestore = ret ? planMem : null; listBack = location.hash;
     planCtx = parts[3] === 't' ? { vid: parts[4] } : parts[3] === 'g' ? { gid: parts[4] } : {};
     return renderPlan(parts[1], parts[2]);
   }
@@ -319,6 +321,7 @@ async function routeInner() {
     return renderDoors();
   }
   if (parts[0] === 'p' && parts[1]) {
+    if (!/^#\/p\//.test(prevHash)) protoFrom = prevHash;
     if (!insp || insp.id !== parts[1]) {
       insp = await db.get('inspections', parts[1]);
       if (!insp) { location.hash = '#/'; return; }
@@ -339,7 +342,7 @@ async function routeInner() {
     // Fertige Protokolle öffnen in der Ansicht; ✎ Bearbeiten führt in die gewohnte Eingabe
     if (parts[2] === 'v' || (parts[2] == null && insp.status === 'done' && !insp.paper)) {
       if (parts[2] == null) { const hv = `#/p/${insp.id}/v`; history.replaceState(null, '', hv); lastHash = hv; }
-      if (!/^#\/p\//.test(prevHash)) viewBack = prevHash || '';
+      viewBack = protoFrom || '';
       if (!viewBack) viewBack = insp.paper ? (insp.returnTo || `#/d/${insp.gateId}`) : insp.visitId ? `#/t/${insp.visitId}` : '#/';
       viewMode = true; releaseAwake();
       return renderView();
@@ -2703,7 +2706,9 @@ async function flUpdate(siteId, fn) {
 // Bild liegt im Speicher "photos" ({ planSite, planEtage }), die Etage zeigt mit etage.map = { photoId, w, h } darauf.
 let planCtl = null, planUrl = null, planCur = null;
 const FINE = matchMedia('(hover: hover) and (pointer: fine)');
-function planClose() { planCtl?.destroy(); planCtl = null; planCur = null; PS = null; if (planUrl) { URL.revokeObjectURL(planUrl); planUrl = null; } document.documentElement.classList.remove('pv-open'); }
+// Zurück vom Protokoll / von der Tür zum Plan: Ausschnitt, Drehung und gewählte Tür wie vorher
+let planMem = null, planRestore = null, planHashCur = '', protoFrom = '';
+function planClose() { if (planCtl && PS) planMem = { hash: planHashCur, view: planCtl.view, sel: PS.sel, back: planBack }; planCtl?.destroy(); planCtl = null; planCur = null; PS = null; if (planUrl) { URL.revokeObjectURL(planUrl); planUrl = null; } document.documentElement.classList.remove('pv-open'); }
 // cam: direkt die Kamera öffnen (Handy / Tablet)
 const planUpBtn = (sid, fid, label, cls = 'chip', cam = false) => `<label class="${cls} plan-up">${label}<input type="file" accept="image/*" ${cam ? 'capture="environment"' : ''} data-planup="${sid}:${fid}" hidden></label>`;
 // Auf Touch-Geräten: Foto aufnehmen oder Bild wählen; am PC direkt die Dateiauswahl
@@ -2727,7 +2732,8 @@ async function renderPlan(sid, fid) {
   if (f.id !== fid) { history.replaceState(null, '', `#/plan/${sid}/${f.id}${planSuffix()}`); lastHash = location.hash; }
   const ph = f.map?.photoId && await db.get('photos', f.map.photoId);
   if (ph?.blob) planUrl = URL.createObjectURL(ph.blob);
-  planCur = { sid, fid: f.id };
+  planCur = { sid, fid: f.id }; planHashCur = location.hash;
+  const rs = planRestore && planRestore.hash === location.hash ? planRestore : null; planRestore = null;
   const fine = FINE.matches;
   const tabs = fl.slice().reverse().map(x => `<button class="pv-tab ${x.id === f.id ? 'on' : ''} ${x.map ? '' : 'nomap'}" data-act="planGo" data-site="${sid}" data-id="${x.id}">${esc(x.name)}</button>`).join('');
   const ctrls = fine ? `<div class="pv-ui pv-tools">
@@ -2758,6 +2764,7 @@ async function renderPlan(sid, fid) {
   const stage = document.getElementById('pvStage'), zEl = document.getElementById('pvZ'), rEl = document.getElementById('pvR'), cEl = document.getElementById('pvC');
   planCtl = mountPlan(stage, document.getElementById('pvImg'), {
     w: f.map.w, h: f.map.h, rot: +settings.get('planRot:' + f.id, 0) || 0,
+    initView: rs?.view,
     pad: FINE.matches ? 84 : 50,
     onRot: (r) => settings.set('planRot:' + f.id, Math.round(r * 10) / 10),
     onTap: (x, y, t) => planTap(x, y, t),
@@ -2775,6 +2782,7 @@ async function renderPlan(sid, fid) {
   await planLoad(sid);
   pinPointers(document.getElementById('pvPins')); listDrag();
   drawPins();
+  if (rs) { if (rs.sel && PS.gates.some(g => g.id === rs.sel)) setTimeout(() => openCard(rs.sel), 150); return; }
   if (planCtx.gid) {
     const g = PS.gates.find(x => x.id === planCtx.gid);
     if (g?.pos?.etageId === f.id) { setTimeout(() => { planCtl?.focus(g.pos.x, g.pos.y, 2.5); openCard(g.id); }, 120); }
@@ -3315,7 +3323,7 @@ document.addEventListener('click', async (e) => {
     case 'size': { settings.set('size', settings.get('size', 'normal') === 'normal' ? 'gross' : 'normal'); return applyLook(); }
     case 'viewEdit': return (location.hash = `#/p/${insp.id}/0`);
     case 'viewShow': await saveNow(); return (location.hash = `#/p/${insp.id}/v`);
-    case 'home': await saveNow(); return (location.hash = insp?.paper ? (insp.returnTo || `#/d/${insp.gateId}`) : insp?.visitId ? `#/t/${insp.visitId}` : '#/');
+    case 'home': await saveNow(); if (/^#\/plan\//.test(protoFrom)) return (location.hash = protoFrom); return (location.hash = insp?.paper ? (insp.returnTo || `#/d/${insp.gateId}`) : insp?.visitId ? `#/t/${insp.visitId}` : '#/');
     case 'jump': return openJump();
     case 'goto': closeJump(); return go(+b.dataset.step);
     case 'prev': return go(stepBy(-1));
@@ -3742,7 +3750,7 @@ async function renderNav() {
     const u = unitOf(insp);
     if (viewMode) { nav.innerHTML = `<button class="dn-back" data-act="menuGo" data-href="${esc(viewBack)}">‹ Zurück</button><div class="dn-title"><span class="dn-h">${unitHead(u)}</span><span>${esc(u.noun)} · ${esc(inspTitle(insp))}</span></div><button class="tb-btn primary dn-edit" data-act="viewEdit">✎ Bearbeiten <kbd>E</kbd></button><div class="dn-foot"><a class="tb-btn sm" href="#/handbuch">📖 Handbuch</a><button class="tb-btn sm" data-act="lang">${LANG === 'en' ? 'DE' : 'EN'}</button></div>`; return; }
     nav.innerHTML = `
-      <button class="dn-back" data-act="home">‹ ${insp.paper ? 'Zurück' : insp.visitId ? 'Zum Termin' : 'Übersicht'}</button>
+      <button class="dn-back" data-act="home">‹ ${/^#\/plan\//.test(protoFrom) ? 'Zum Plan' : insp.paper ? 'Zurück' : insp.visitId ? 'Zum Termin' : 'Übersicht'}</button>
       <div class="dn-title"><span class="dn-h">${unitHead(u)}</span><span>${esc(u.noun)} · ${esc(inspTitle(insp))}</span></div>
       ${sideSteps()}
       <div class="dn-foot"><a class="tb-btn sm" href="#/handbuch" title="Feldhandbuch">📖 Handbuch</a><button class="tb-btn sm" data-act="lang" title="Sprache">${LANG === 'en' ? 'DE' : 'EN'}</button></div>`;

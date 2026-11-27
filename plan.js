@@ -8,7 +8,7 @@
 const DEG = Math.PI / 180;
 const rot = (vx, vy, a) => [vx * Math.cos(a) - vy * Math.sin(a), vx * Math.sin(a) + vy * Math.cos(a)];
 
-export function mountPlan(stage, img, { w, h, rot: r0 = 0, pad = 12, onRot, onChange, onTap, onDbl, tapMode } = {}) {
+export function mountPlan(stage, img, { w, h, rot: r0 = 0, pad = 12, initView, onRot, onChange, onTap, onDbl, tapMode } = {}) {
   const world = stage.querySelector('.pv-world');
   let v = { x: 0, y: 0, s: 1, r: r0 }, fitS = 1, raf = 0;
   const box = () => stage.getBoundingClientRect();
@@ -137,7 +137,7 @@ export function mountPlan(stage, img, { w, h, rot: r0 = 0, pad = 12, onRot, onCh
     if (last && b.width && last.width) pan((b.width - last.width) / 2, (b.height - last.height) / 2);
     last = { width: b.width, height: b.height };
   });
-  img.decode?.().catch(() => {}).finally(() => { fit(); last = { width: box().width, height: box().height }; ro.observe(stage); });
+  img.decode?.().catch(() => {}).finally(() => { fit(); if (initView) { Object.assign(v, initView); apply(); } last = { width: box().width, height: box().height }; ro.observe(stage); });
 
   return {
     zoomIn: () => zoomAt(1.4, ...center()), zoomOut: () => zoomAt(1 / 1.4, ...center()),
