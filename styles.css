@@ -656,3 +656,5 @@ html:not(.desk) .vw-page { padding-bottom: calc(96px + env(safe-area-inset-botto
 .pv-list-sep { font-size: .72em; text-transform: uppercase; letter-spacing: .05em; color: #94a3b8; padding: 8px 8px 2px; }
 .pv-ghost { position: fixed; left: 0; top: 0; z-index: 60; pointer-events: none; margin: -12px 0 0 -16px; padding: 4px 8px; font: 700 12px/1 system-ui, sans-serif; color: #fff; background: #7c3aed; border: 2px solid #fff; border-radius: 999px; box-shadow: 0 4px 12px rgba(0,0,0,.5); }
 .pv-ghost.k-tor { border-radius: 3px; }
+.vw-paper .print-stage { padding: 4px 0 0; }
+.vw-paper .ppage { box-shadow: 0 2px 14px rgba(0,0,0,.22); }

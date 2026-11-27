@@ -630,6 +630,28 @@ function refreshChrome() {
 // ---------- Ansicht: fertiges Protokoll nur lesen (dicht, ohne Knöpfe) ----------
 let viewMode = false, viewBack = '';
 const VSTATE = { ok: ['v-ok', '✓', 'o.B.'], b: ['v-b', '✗', 'B.'], nv: ['v-nv', '–', 'n.v.'] };
+// Am PC: so nah wie möglich am Papierformular (dieselbe Seite wie beim Drucken, auf Fensterbreite gebracht)
+async function renderViewPaper(u, edit) {
+  const id = insp.id, pages = await paperHTML(insp);
+  if (!viewMode || insp?.id !== id) return;
+  $app.innerHTML = `
+    ${regBar(viewBack, unitHead(u), `${esc(u.noun)} · ${esc(inspTitle(insp))}`, `${planBtnInsp()}<button class="tb-btn" data-act="menuGo" data-href="#/druck/${insp.id}">🖨 Drucken</button>${edit}<button class="tb-btn icon" data-act="menu" data-for="insp" data-id="${insp.id}" aria-label="Mehr">⋯</button>`)}
+    <main class="dk-page vw-paper">
+      ${insp.intNote ? `<section class="dk-panel inote-card vw-inote"><span class="lbl">📝 Interne Notiz <span class="muted small">nur für uns, nicht im Protokoll</span></span><p>${esc(insp.intNote)}</p></section>` : ''}
+      <div class="print-stage"><div class="print-scale">${pages}</div></div>
+    </main>`;
+  fitPaper();
+}
+function fitPaper() {
+  const sc = document.querySelector('.vw-paper .print-scale'); if (!sc) return;
+  sc.style.transform = '';
+  const pg = sc.querySelector('.ppage'); if (!pg) return;
+  const pageW = pg.offsetWidth, avail = sc.parentElement.clientWidth;
+  const k = Math.min(1.6, avail / pageW);
+  sc.style.transform = `scale(${k})`; sc.style.width = pageW + 'px';
+  sc.style.marginLeft = Math.max(0, (avail - pageW * k) / 2) + 'px';
+  sc.parentElement.style.height = sc.offsetHeight * k + 20 + 'px';
+}
 function renderView() {
   const u = unitOf(insp), st = stats(), h = insp.header || {};
   const kv = (label, val) => val ? `<div class="vw-kv"><span>${esc(label)}</span><b>${esc(val)}</b></div>` : '';
@@ -658,6 +680,7 @@ function renderView() {
   const sig = (who, lbl) => { const s = insp.sig?.[who] || {}; return `<div class="vw-sig"><span class="muted small">${lbl}</span>${s.img ? `<img alt="" src="${s.img}">` : who === 'ag' && s.absent ? '<i class="muted">niemand vor Ort</i>' : '<i class="muted">keine Unterschrift</i>'}${s.name ? `<b>${esc(s.name)}</b>` : ''}</div>`; };
   const edit = DESK ? `<button class="tb-btn primary" data-act="viewEdit">✎ Bearbeiten</button>` : '';
   const P = (h2, body, cls = '') => `<section class="${DESK ? 'dk-panel' : 'card'} vw-card ${cls}">${h2 ? `<h2>${h2}</h2>` : ''}${body}</section>`;
+  if (DESK) return renderViewPaper(u, edit);
   $app.innerHTML = `
     ${regBar(viewBack, unitHead(u), `${esc(u.noun)} · ${esc(inspTitle(insp))}`, `${edit}<button class="${DESK ? 'tb-btn icon' : 'icon-btn'}" data-act="menu" data-for="insp" data-id="${insp.id}" aria-label="Mehr">⋯</button>`)}
     <main class="${DESK ? 'dk-page' : 'home'} vw-page">
@@ -3188,7 +3211,13 @@ async function renderPrint(ids, backHash) {
   let pages = '';
   for (const id of ids) {
     const rec = await db.get('inspections', id);
-    if (!rec) continue;
+    if (rec) pages += await paperHTML(rec);
+  }
+  return printPage(pages, ids, backHash);
+}
+// Das Protokoll als Papierformular (HTML). Druck und Ansicht am PC nutzen dasselbe.
+async function paperHTML(rec) {
+  {
     const t = TEMPLATES[rec.templateId];
     const photos = [];
     for (const it of t.sections.flatMap(s => s.items)) {
@@ -3201,8 +3230,10 @@ async function renderPrint(ids, backHash) {
         photos.push({ url: photoUrls.get(pid), caption: `${it.label}${a.note ? ': ' + a.note : ''}` });
       }
     }
-    pages += (PRINTERS[rec.templateId] || printTore)(rec, t, photos);
+    return (PRINTERS[rec.templateId] || printTore)(rec, t, photos);
   }
+}
+function printPage(pages, ids, backHash) {
   $app.innerHTML = `
     <div class="print-bar">
       <button class="pb-back" data-act="printBack" data-href="${esc(backHash)}">‹ Zurück</button>
@@ -3214,6 +3245,7 @@ async function renderPrint(ids, backHash) {
   window.scrollTo(0, 0);
 }
 function fitPrint() {
+  if (viewMode) return fitPaper();
   const sc = document.querySelector('.print-scale');
   if (!sc) return;
   sc.style.transform = '';
